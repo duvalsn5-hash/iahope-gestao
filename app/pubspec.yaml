@@ -16,7 +16,7 @@ dependencies:
   go_router: ^14.6.0            # rotas com redirect por sessão/perfil
   dio: ^5.7.0                   # HTTP + interceptors (JWT, bloqueio)
   shared_preferences: ^2.3.3    # token + último CNPJ
-  intl: ^0.19.0                 # moeda/data pt_BR
+  intl: any                     # moeda/data pt_BR (versão fixada pelo próprio Flutter)
   file_picker: ^8.1.4           # upload da logo (Android/Windows/Web)
   mobile_scanner: ^6.0.2        # câmera como leitor no Android
   pdf: ^3.11.1                  # cupom 80mm com logo
