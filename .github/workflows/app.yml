@@ -17,6 +17,11 @@ on:
     paths: ['app/**', '.github/workflows/app.yml']
   workflow_dispatch:
 
+# Uma publicação por vez: um push novo cancela a compilação anterior ainda em andamento
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write   # criar Release
   pages: write
