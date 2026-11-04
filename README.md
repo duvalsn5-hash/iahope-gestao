@@ -53,6 +53,21 @@ O mesmo código roda nos dois; só mudam variáveis de ambiente.
 
 ---
 
+## 1.1 Módulos e planos
+
+O Master liga e desliga módulos por empresa (painel Master → **Módulos**). O núcleo vem sempre incluído.
+
+| Módulo | O que libera |
+|---|---|
+| **Núcleo** (sempre) | Produtos e estoque (entrada, ajuste, contagem, histórico), clientes e fornecedores, empresa e logo |
+| `PDV` | Frente de caixa com abertura, sangria, suprimento e fechamento (sobra/falta), cliente na venda, cupom com logo |
+| `FINANCEIRO` | Contas a pagar e a receber, parcelamento, baixa parcial, venda **a prazo** gerando conta a receber, histórico de caixas |
+| `COMPRAS` | Entrada de mercadoria pelo **XML da NF-e**: cadastra o fornecedor, soma estoque com fator de conversão (CX→UN), atualiza custo, gera contas a pagar das duplicatas e aprende o código do fornecedor |
+| `PRODUTIVIDADE` | Descarga hora a hora por doca e carga |
+| `BALANCA` | Leitura de etiqueta de balança (EAN-13 com prefixo 2, preço ou peso) no PDV |
+
+A API bloqueia rotas de módulos não contratados (`MODULO_INATIVO`) e o app esconde os menus.
+
 ## 2. Estrutura de pastas
 
 ```
@@ -61,6 +76,7 @@ gestao-iahope/
 │   ├── 00_roles.sql         # cria o usuário app_api (troque a senha)
 │   ├── 01_schema.sql        # DDL completo, RLS, funções, triggers, permissões
 │   ├── 02_seed.sql          # Super Admin + empresa demo + produtos
+│   ├── 03_fase1.sql         # módulos, clientes/fornecedores, caixa, financeiro, compras XML, balança
 │   └── 99_rls_tests.sql     # 13 testes de isolamento (rodar como app_api, em banco de teste)
 ├── docs/                    # DEPLOY_GRATIS.md · MIGRAR_PARA_HOSTING.md
 ├── deploy/vps/              # produção em VPS: Caddy (HTTPS) + API + Postgres
@@ -122,6 +138,7 @@ createdb gestao
 psql -U postgres -d gestao -f database/00_roles.sql   # troque a senha antes
 psql -U postgres -d gestao -f database/01_schema.sql
 psql -U postgres -d gestao -f database/02_seed.sql
+psql -U postgres -d gestao -f database/03_fase1.sql
 # testes de isolamento — SÓ em banco de teste (devem terminar em "Todos os testes de RLS passaram.")
 psql -U app_api -d gestao -f database/99_rls_tests.sql
 ```

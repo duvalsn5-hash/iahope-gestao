@@ -34,6 +34,7 @@ O workflow **"API e banco"** já roda sozinho e confirma que o banco e o isolame
    1. `database/00_roles.sql` — **antes, troque a senha** do `app_api` por uma forte (12+ caracteres, maiúsculas, minúsculas, números e símbolos; o Neon recusa senha fraca).
    2. `database/01_schema.sql`
    3. `database/02_seed.sql`
+   4. `database/03_fase1.sql` — módulos, clientes/fornecedores, caixa, financeiro, compras e balança
 4. Troque as senhas de demonstração (ainda no SQL Editor):
    ```sql
    UPDATE app.users SET password_hash = crypt('SuaSenhaForte!2026', gen_salt('bf', 10))
