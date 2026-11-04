@@ -61,7 +61,8 @@ jobs:
       - name: Endereço da API
         shell: bash
         run: |
-          U="${API_URL_VAR:-$(cat api_url.txt 2>/dev/null | tr -d '[:space:]')}"
+          F=""; if [ -f api_url.txt ]; then F=$(tr -d '[:space:]' < api_url.txt); fi
+          U="${API_URL_VAR:-$F}"
           echo "API_URL=${U:-http://localhost:3000}" >> "$GITHUB_ENV"
           echo "API: ${U:-http://localhost:3000}"
       # GitHub Pages publica em /<nome-do-repositorio>/
@@ -96,7 +97,8 @@ jobs:
       - name: Endereço da API
         shell: bash
         run: |
-          U="${API_URL_VAR:-$(cat api_url.txt 2>/dev/null | tr -d '[:space:]')}"
+          F=""; if [ -f api_url.txt ]; then F=$(tr -d '[:space:]' < api_url.txt); fi
+          U="${API_URL_VAR:-$F}"
           echo "API_URL=${U:-http://localhost:3000}" >> "$GITHUB_ENV"
           echo "API: ${U:-http://localhost:3000}"
       - run: flutter build apk --release --dart-define=API_URL=${{ env.API_URL }}
@@ -118,7 +120,8 @@ jobs:
       - name: Endereço da API
         shell: bash
         run: |
-          U="${API_URL_VAR:-$(cat api_url.txt 2>/dev/null | tr -d '[:space:]')}"
+          F=""; if [ -f api_url.txt ]; then F=$(tr -d '[:space:]' < api_url.txt); fi
+          U="${API_URL_VAR:-$F}"
           echo "API_URL=${U:-http://localhost:3000}" >> "$GITHUB_ENV"
           echo "API: ${U:-http://localhost:3000}"
       - run: flutter build windows --release --dart-define=API_URL=${{ env.API_URL }}
