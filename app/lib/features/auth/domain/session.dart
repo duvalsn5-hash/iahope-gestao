@@ -69,6 +69,7 @@ class SessionTenant {
     this.logoUrl,
     this.primaryColor,
     this.licenseExpiresAt,
+    this.modules = const [],
   });
 
   final String id;
@@ -79,6 +80,9 @@ class SessionTenant {
   final String? primaryColor;
   final DateTime? licenseExpiresAt;
 
+  /// Módulos contratados: PDV, PRODUTIVIDADE, FINANCEIRO, COMPRAS, BALANCA.
+  final List<String> modules;
+
   factory SessionTenant.fromJson(Map<String, dynamic> j) => SessionTenant(
         id: j['id'] as String,
         cnpj: j['cnpj'] as String,
@@ -87,6 +91,7 @@ class SessionTenant {
         logoUrl: j['logoUrl'] as String?,
         primaryColor: j['primaryColor'] as String?,
         licenseExpiresAt: DateTime.tryParse('${j['licenseExpiresAt']}'),
+        modules: [for (final m in (j['modules'] as List? ?? const [])) m.toString()],
       );
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +102,7 @@ class SessionTenant {
         'logoUrl': logoUrl,
         'primaryColor': primaryColor,
         'licenseExpiresAt': licenseExpiresAt?.toIso8601String().substring(0, 10),
+        'modules': modules,
       };
 
   SessionTenant copyWith({String? logoUrl, bool clearLogo = false, String? nomeFantasia, String? primaryColor}) =>
@@ -108,6 +114,7 @@ class SessionTenant {
         logoUrl: clearLogo ? null : (logoUrl ?? this.logoUrl),
         primaryColor: primaryColor ?? this.primaryColor,
         licenseExpiresAt: licenseExpiresAt,
+        modules: modules,
       );
 }
 
@@ -119,9 +126,17 @@ class Session {
   final SessionTenant tenant;
 
   bool get isSuperAdmin => user.role == UserRole.superAdmin;
+  bool get isManager => const {UserRole.admin, UserRole.gerente}.contains(user.role);
+  bool hasModule(String m) => tenant.modules.contains(m);
   bool get canManageCompany => user.role == UserRole.admin || isSuperAdmin;
-  bool get canSell => const {UserRole.admin, UserRole.gerente, UserRole.caixa}.contains(user.role);
-  bool get canRecordProductivity => const {UserRole.admin, UserRole.gerente, UserRole.operador}.contains(user.role);
+  bool get canSell => hasModule('PDV') && const {UserRole.admin, UserRole.gerente, UserRole.caixa}.contains(user.role);
+  bool get canSeeProductivity =>
+      hasModule('PRODUTIVIDADE') && const {UserRole.admin, UserRole.gerente, UserRole.operador}.contains(user.role);
+  bool get canRecordProductivity => canSeeProductivity;
+  bool get canUseFinance => hasModule('FINANCEIRO') && isManager;
+  bool get canUsePurchases => hasModule('COMPRAS') && isManager;
+  bool get canEditProducts => isManager;
+  bool get canSeePartners => const {UserRole.admin, UserRole.gerente, UserRole.caixa}.contains(user.role);
 
   /// Dias até vencer a licença (null para tenant sem data).
   int? get licenseDaysLeft {

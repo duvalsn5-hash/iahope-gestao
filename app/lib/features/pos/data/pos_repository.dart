@@ -16,6 +16,8 @@ class PosRepository {
     required List<Payment> payments,
     double discount = 0,
     String? customerDoc,
+    String? customerId,
+    int dueDays = 30,
   }) =>
       apiCall(() async {
         final r = await _dio.post('/pos/sales', data: {
@@ -23,6 +25,8 @@ class PosRepository {
           'payments': [for (final p in payments) p.toJson()],
           'discount': discount,
           if (customerDoc != null && customerDoc.isNotEmpty) 'customerDoc': customerDoc,
+          if (customerId != null) 'customerId': customerId,
+          'dueDays': dueDays,
         });
         return Receipt.fromJson(r.data as Map<String, dynamic>);
       });

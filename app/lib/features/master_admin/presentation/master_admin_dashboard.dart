@@ -94,6 +94,17 @@ class _MasterAdminDashboardState extends ConsumerState<MasterAdminDashboard> {
     }
   }
 
+  Future<void> _modules(Tenant t) async {
+    final selected = await showDialog<List<String>>(context: context, builder: (_) => _ModulesDialog(tenant: t));
+    if (selected == null || !mounted) return;
+    try {
+      await ref.read(tenantsControllerProvider.notifier).setModules(t, selected);
+      if (mounted) showOk(context, 'Módulos de ${t.displayName} atualizados');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _renew(Tenant t) async {
     final base = t.isExpired ? DateTime.now() : t.licenseExpiresAt;
     final picked = await showDatePicker(
@@ -179,8 +190,8 @@ class _MasterAdminDashboardState extends ConsumerState<MasterAdminDashboard> {
                 data: (list) => list.isEmpty
                     ? const Padding(padding: EdgeInsets.all(48), child: Center(child: Text('Nenhuma empresa encontrada')))
                     : compact
-                        ? Column(children: [for (final t in list) _TenantCard(t: t, onToggle: _toggle, onRenew: _renew)])
-                        : _TenantTable(list: list, onToggle: _toggle, onRenew: _renew),
+                        ? Column(children: [for (final t in list) _TenantCard(t: t, onToggle: _toggle, onRenew: _renew, onModules: _modules)])
+                        : _TenantTable(list: list, onToggle: _toggle, onRenew: _renew, onModules: _modules),
               ),
             ],
           ),
@@ -217,10 +228,11 @@ String _licenseText(Tenant t) {
 }
 
 class _TenantTable extends StatelessWidget {
-  const _TenantTable({required this.list, required this.onToggle, required this.onRenew});
+  const _TenantTable({required this.list, required this.onToggle, required this.onRenew, required this.onModules});
   final List<Tenant> list;
   final void Function(Tenant) onToggle;
   final void Function(Tenant) onRenew;
+  final void Function(Tenant) onModules;
 
   @override
   Widget build(BuildContext context) {
@@ -264,6 +276,11 @@ class _TenantTable extends StatelessWidget {
                           icon: const Icon(Icons.event_repeat),
                           label: const Text('Renovar'),
                         ),
+                        TextButton.icon(
+                          onPressed: () => onModules(t),
+                          icon: const Icon(Icons.extension_outlined),
+                          label: Text('Módulos (${t.modules.length})'),
+                        ),
                       ])),
               ]),
           ],
@@ -274,10 +291,11 @@ class _TenantTable extends StatelessWidget {
 }
 
 class _TenantCard extends StatelessWidget {
-  const _TenantCard({required this.t, required this.onToggle, required this.onRenew});
+  const _TenantCard({required this.t, required this.onToggle, required this.onRenew, required this.onModules});
   final Tenant t;
   final void Function(Tenant) onToggle;
   final void Function(Tenant) onRenew;
+  final void Function(Tenant) onModules;
 
   @override
   Widget build(BuildContext context) {
@@ -302,11 +320,59 @@ class _TenantCard extends StatelessWidget {
           if (t.isBlocked && (t.blockedReason?.isNotEmpty ?? false)) Text('Motivo: ${t.blockedReason}'),
           if (!t.isPlatform)
             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              TextButton(onPressed: () => onModules(t), child: Text('Módulos (${t.modules.length})')),
               TextButton(onPressed: () => onRenew(t), child: const Text('Renovar')),
               FilledButton.tonal(onPressed: () => onToggle(t), child: Text(t.isBlocked ? 'Ativar' : 'Bloquear')),
             ]),
         ]),
       ),
+    );
+  }
+}
+
+/// Liga/desliga os módulos contratados pela empresa (base para planos de venda).
+class _ModulesDialog extends StatefulWidget {
+  const _ModulesDialog({required this.tenant});
+  final Tenant tenant;
+
+  @override
+  State<_ModulesDialog> createState() => _ModulesDialogState();
+}
+
+class _ModulesDialogState extends State<_ModulesDialog> {
+  late final Set<String> _sel = {...widget.tenant.modules};
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Módulos · ${widget.tenant.displayName}'),
+      content: SizedBox(
+        width: 440,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.verified_outlined),
+            title: Text('Sempre incluídos'),
+            subtitle: Text('Produtos e estoque, clientes e fornecedores, empresa e logo'),
+          ),
+          const Divider(),
+          for (final m in kModules)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _sel.contains(m.$1),
+              title: Text(m.$2),
+              subtitle: Text(m.$3),
+              onChanged: (v) => setState(() => v == true ? _sel.add(m.$1) : _sel.remove(m.$1)),
+            ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, [for (final m in kModules) if (_sel.contains(m.$1)) m.$1]),
+          child: const Text('Salvar'),
+        ),
+      ],
     );
   }
 }

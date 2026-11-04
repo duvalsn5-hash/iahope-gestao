@@ -13,6 +13,7 @@ class Tenant {
     required this.maxUsers,
     required this.usersCount,
     required this.isPlatform,
+    this.modules = const [],
   });
 
   final String id;
@@ -26,6 +27,7 @@ class Tenant {
   final int maxUsers;
   final int usersCount;
   final bool isPlatform;
+  final List<String> modules;
 
   String get displayName => (nomeFantasia?.isNotEmpty ?? false) ? nomeFantasia! : razaoSocial;
   bool get isBlocked => status == TenantStatus.bloqueado;
@@ -49,6 +51,7 @@ class Tenant {
         maxUsers: (j['maxUsers'] as num).toInt(),
         usersCount: (j['usersCount'] as num? ?? 0).toInt(),
         isPlatform: j['isPlatform'] as bool? ?? false,
+        modules: [for (final m in (j['modules'] as List? ?? const [])) m.toString()],
       );
 }
 
@@ -92,3 +95,12 @@ class NewTenantInput {
         'admin': {'username': adminUsername, 'fullName': adminFullName, 'password': adminPassword},
       };
 }
+
+/// Catálogo de módulos contratáveis (o núcleo — produtos, clientes, empresa — está sempre ativo).
+const kModules = [
+  ('PDV', 'PDV e caixa', 'Frente de caixa, abertura/fechamento, cupom'),
+  ('PRODUTIVIDADE', 'Produtividade logística', 'Descarga hora a hora, docas e cargas'),
+  ('FINANCEIRO', 'Financeiro', 'Contas a pagar e a receber, venda a prazo'),
+  ('COMPRAS', 'Compras por XML', 'Entrada de NF-e com estoque, custo e duplicatas'),
+  ('BALANCA', 'Balança', 'Leitura de etiqueta de balança no PDV'),
+];

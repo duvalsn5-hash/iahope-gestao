@@ -5,6 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/common_widgets.dart';
 import '../../auth/presentation/session_controller.dart';
+import '../../cash/domain/cash.dart';
+import '../../cash/presentation/cash_controller.dart';
+import '../../cash/presentation/cash_dialogs.dart';
+import '../../partners/domain/partner.dart';
+import '../../partners/presentation/partner_picker_dialog.dart';
 import '../../products/domain/product.dart';
 import '../domain/pos_models.dart';
 import 'pos_controller.dart';
@@ -19,7 +24,7 @@ import 'widgets/receipt_dialog.dart';
 /// então basta bipar. No Android há também o botão de câmera.
 ///
 /// Atalhos (Windows/Web):
-///   F2 buscar · F7 quantidade · F8 remover item · F9 desconto · F10 finalizar
+///   F2 buscar · F3 cliente · F7 quantidade · F8 remover item · F9 desconto · F10 finalizar
 ///   ↑/↓ navegar · +/- quantidade do item selecionado · Esc limpar · Ctrl+Del cancelar venda
 ///   Digite "3*" antes do código para lançar 3 unidades.
 class PosScreen extends ConsumerStatefulWidget {
@@ -176,17 +181,17 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   Future<void> _finish() async {
     final s = ref.read(posControllerProvider);
     if (s.isEmpty || _busy) return;
-    final payments = await showDialog<List<Payment>>(
+    final result = await showDialog<PaymentResult>(
       context: context,
-      builder: (_) => PaymentDialog(total: s.total),
+      builder: (_) => PaymentDialog(total: s.total, customerName: s.customer?.displayName),
     );
-    if (payments == null || !mounted) {
+    if (result == null || !mounted) {
       _focusSearch();
       return;
     }
     setState(() => _busy = true);
     try {
-      final receipt = await _pos.finish(payments);
+      final receipt = await _pos.finish(result.payments, dueDays: result.dueDays);
       if (!mounted) return;
       await showDialog<void>(context: context, builder: (_) => ReceiptDialog(receipt: receipt));
     } catch (e) {
@@ -237,14 +242,97 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     if (idx != null) _pos.increment(idx, by);
   }
 
+  Future<void> _pickCustomer() async {
+    final p = await showDialog<Partner>(context: context, builder: (_) => const PartnerPickerDialog());
+    if (p != null) _pos.setCustomer(p);
+    _focusSearch();
+  }
+
+  Future<void> _openCash() async {
+    final r = await askCashAmount(
+      context,
+      title: 'Abrir caixa',
+      label: 'Troco inicial na gaveta',
+      help: 'Conte o dinheiro que está na gaveta para começar o dia.',
+      initial: 0,
+    );
+    if (r == null || !mounted) return;
+    try {
+      await ref.read(cashControllerProvider.notifier).open(r.$1);
+      if (mounted) showOk(context, 'Caixa aberto com ${money(r.$1)}');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+    _focusSearch();
+  }
+
+  Future<void> _cashMove(String kind) async {
+    final r = await askCashAmount(
+      context,
+      title: kind == 'SANGRIA' ? 'Sangria (retirada)' : 'Suprimento (reforço de troco)',
+      label: 'Valor',
+      askReason: true,
+    );
+    if (r == null || r.$1 <= 0 || !mounted) {
+      _focusSearch();
+      return;
+    }
+    try {
+      await ref.read(cashControllerProvider.notifier).movement(kind, r.$1, r.$2);
+      if (mounted) showOk(context, '${kind == 'SANGRIA' ? 'Sangria' : 'Suprimento'} de ${money(r.$1)} registrado');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+    _focusSearch();
+  }
+
+  Future<void> _closeCash(CashSummary summary) async {
+    if (!ref.read(posControllerProvider).isEmpty) {
+      showError(context, 'Finalize ou cancele a venda em andamento antes de fechar o caixa');
+      return;
+    }
+    final r = await showDialog<(double, String?)>(context: context, builder: (_) => CloseCashDialog(summary: summary));
+    if (r == null || !mounted) return;
+    try {
+      final closed = await ref.read(cashControllerProvider.notifier).close(r.$1, r.$2);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Caixa fechado'),
+          content: SizedBox(width: 400, child: CashSummaryView(s: closed)),
+          actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+        ),
+      );
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cash = ref.watch(cashControllerProvider);
+    final cashState = cash.valueOrNull;
+    if (cashState == null) {
+      return cash.hasError
+          ? Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(cash.error.toString()),
+                const SizedBox(height: 8),
+                FilledButton(onPressed: () => ref.invalidate(cashControllerProvider), child: const Text('Tentar de novo')),
+              ]),
+            )
+          : const Center(child: CircularProgressIndicator());
+    }
+    if (!cashState.open) return _CashClosedPanel(onOpen: _openCash);
+
     final state = ref.watch(posControllerProvider);
     final session = ref.watch(sessionControllerProvider);
     final wide = MediaQuery.sizeOf(context).width >= 900;
 
     final bindings = <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.f2): _focusSearch,
+      const SingleActivator(LogicalKeyboardKey.f3): _pickCustomer,
       const SingleActivator(LogicalKeyboardKey.f7): _editQty,
       const SingleActivator(LogicalKeyboardKey.f8): _removeSelected,
       const SingleActivator(LogicalKeyboardKey.f9): _editDiscount,
@@ -294,12 +382,26 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       onFinish: _finish,
     );
 
+    final cashBar = _CashBar(
+      summary: cashState.summary!,
+      customer: state.customer,
+      onCustomer: _pickCustomer,
+      onClearCustomer: () => _pos.setCustomer(null),
+      onWithdraw: () => _cashMove('SANGRIA'),
+      onSupply: () => _cashMove('SUPRIMENTO'),
+      onClose: () => _closeCash(cashState.summary!),
+    );
+
     return CallbackShortcuts(
       bindings: bindings,
       child: Focus(
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: wide
+          child: Column(children: [
+            cashBar,
+            const SizedBox(height: 8),
+            Expanded(
+              child: wide
               ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Expanded(
                     flex: 3,
@@ -315,9 +417,95 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   const SizedBox(height: 8),
                   totals,
                 ]),
+            ),
+          ]),
         ),
       ),
     );
+  }
+}
+
+/// Caixa fechado: o PDV só libera depois da abertura.
+class _CashClosedPanel extends StatelessWidget {
+  const _CashClosedPanel({required this.onOpen});
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return CallbackShortcuts(
+      bindings: {const SingleActivator(LogicalKeyboardKey.enter): onOpen},
+      child: Focus(
+        autofocus: true,
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.lock_outline, size: 72, color: t.colorScheme.outline),
+            const SizedBox(height: 12),
+            Text('Caixa fechado', style: t.textTheme.headlineSmall),
+            const SizedBox(height: 4),
+            const Text('Abra o caixa informando o troco inicial para começar a vender.'),
+            const SizedBox(height: 20),
+            FilledButton.icon(onPressed: onOpen, icon: const Icon(Icons.lock_open), label: const Text('Abrir caixa (Enter)')),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Barra do topo do PDV: situação do caixa, cliente identificado e ações de caixa.
+class _CashBar extends StatelessWidget {
+  const _CashBar({
+    required this.summary,
+    required this.customer,
+    required this.onCustomer,
+    required this.onClearCustomer,
+    required this.onWithdraw,
+    required this.onSupply,
+    required this.onClose,
+  });
+
+  final CashSummary summary;
+  final Partner? customer;
+  final VoidCallback onCustomer, onClearCustomer, onWithdraw, onSupply, onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      Chip(
+        avatar: Icon(Icons.circle, size: 12, color: Colors.green.shade600),
+        label: Text('Caixa aberto · gaveta ${money(summary.expectedCash)} · ${summary.salesCount} venda(s)'),
+      ),
+      customer == null
+          ? ActionChip(avatar: const Icon(Icons.person_search, size: 18), label: const Text('Cliente (F3)'), onPressed: onCustomer)
+          : InputChip(
+              avatar: const Icon(Icons.person, size: 18),
+              label: Text(customer!.displayName, overflow: TextOverflow.ellipsis),
+              backgroundColor: t.colorScheme.primaryContainer,
+              onPressed: onCustomer,
+              onDeleted: onClearCustomer,
+            ),
+      PopupMenuButton<String>(
+        tooltip: 'Caixa',
+        onSelected: (v) {
+          switch (v) {
+            case 'S':
+              onWithdraw();
+            case 'U':
+              onSupply();
+            case 'F':
+              onClose();
+          }
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'S', child: ListTile(leading: Icon(Icons.outbox), title: Text('Sangria'))),
+          PopupMenuItem(value: 'U', child: ListTile(leading: Icon(Icons.move_to_inbox), title: Text('Suprimento'))),
+          PopupMenuItem(value: 'F', child: ListTile(leading: Icon(Icons.lock_outline), title: Text('Fechar caixa'))),
+        ],
+        child: const Chip(avatar: Icon(Icons.point_of_sale, size: 18), label: Text('Caixa ▾')),
+      ),
+    ]);
   }
 }
 
@@ -572,6 +760,7 @@ class _ShortcutsLegend extends StatelessWidget {
   Widget build(BuildContext context) {
     const items = [
       ('F2', 'Buscar'),
+      ('F3', 'Cliente'),
       ('F7', 'Quantidade'),
       ('F8', 'Remover item'),
       ('F9', 'Desconto'),

@@ -62,3 +62,66 @@ double parseMoney(String v) {
   if (t.contains(',')) return double.tryParse(t.replaceAll('.', '').replaceAll(',', '.')) ?? 0;
   return double.tryParse(t) ?? 0;
 }
+
+bool isValidCpf(String value) {
+  final d = onlyDigits(value);
+  if (d.length != 11 || RegExp(r'^(\d)\1{10}$').hasMatch(d)) return false;
+  int calc(int len) {
+    var s = 0;
+    for (var i = 0; i < len; i++) {
+      s += int.parse(d[i]) * (len + 1 - i);
+    }
+    final r = (s * 10) % 11;
+    return r == 10 ? 0 : r;
+  }
+
+  return calc(9) == int.parse(d[9]) && calc(10) == int.parse(d[10]);
+}
+
+/// 52998224725 → 529.982.247-25 · 14 dígitos → CNPJ formatado
+String formatDoc(String? v) {
+  final d = onlyDigits(v ?? '');
+  if (d.length == 11) {
+    return '${d.substring(0, 3)}.${d.substring(3, 6)}.${d.substring(6, 9)}-${d.substring(9)}';
+  }
+  if (d.length == 14) return formatCnpj(d);
+  return v ?? '';
+}
+
+/// Máscara que vira CPF (até 11 dígitos) ou CNPJ (12–14 dígitos) conforme a digitação.
+class CpfCnpjInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    var d = onlyDigits(newValue.text);
+    if (d.length > 14) d = d.substring(0, 14);
+    final b = StringBuffer();
+    if (d.length <= 11) {
+      for (var i = 0; i < d.length; i++) {
+        if (i == 3 || i == 6) b.write('.');
+        if (i == 9) b.write('-');
+        b.write(d[i]);
+      }
+    } else {
+      for (var i = 0; i < d.length; i++) {
+        if (i == 2 || i == 5) b.write('.');
+        if (i == 8) b.write('/');
+        if (i == 12) b.write('-');
+        b.write(d[i]);
+      }
+    }
+    final text = b.toString();
+    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+  }
+}
+
+/// YYYY-MM-DD (data do calendário, sem fuso)
+String isoDate(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// Lê 'YYYY-MM-DD' como data local (sem deslocar o dia pelo fuso).
+DateTime? parseIsoDate(String? s) {
+  if (s == null || s.length < 10) return null;
+  final p = s.substring(0, 10).split('-');
+  if (p.length != 3) return null;
+  return DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]));
+}

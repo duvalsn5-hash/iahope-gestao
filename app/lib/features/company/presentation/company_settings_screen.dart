@@ -7,6 +7,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/common_widgets.dart';
 import '../../auth/presentation/session_controller.dart';
 import '../data/company_repository.dart';
+import 'scale_config_card.dart';
 
 /// White-Label: logo (cabeçalho + cupom do PDV), nome fantasia e cor da marca.
 class CompanySettingsScreen extends ConsumerStatefulWidget {
@@ -190,6 +191,10 @@ class _CompanySettingsScreenState extends ConsumerState<CompanySettingsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              if (session.hasModule('BALANCA')) ...[
+                const ScaleConfigCard(),
+                const SizedBox(height: 16),
+              ],
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.verified_outlined),

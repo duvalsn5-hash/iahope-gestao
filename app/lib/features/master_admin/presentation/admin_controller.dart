@@ -42,6 +42,10 @@ class TenantsController extends AutoDisposeAsyncNotifier<List<Tenant>> {
     _replace(await ref.read(adminRepositoryProvider).renew(t.id, until, maxUsers: maxUsers));
   }
 
+  Future<void> setModules(Tenant t, List<String> modules) async {
+    _replace(await ref.read(adminRepositoryProvider).setModules(t.id, modules));
+  }
+
   Future<void> create(NewTenantInput input) async {
     await ref.read(adminRepositoryProvider).create(input);
     ref.invalidateSelf();

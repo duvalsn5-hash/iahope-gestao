@@ -33,6 +33,11 @@ class AdminRepository {
         return Tenant.fromJson(r.data as Map<String, dynamic>);
       });
 
+  Future<Tenant> setModules(String id, List<String> modules) => apiCall(() async {
+        final r = await _dio.patch('/admin/tenants/$id/modules', data: {'modules': modules});
+        return Tenant.fromJson(r.data as Map<String, dynamic>);
+      });
+
   Future<Tenant> renew(String id, DateTime until, {int? maxUsers}) => apiCall(() async {
         final r = await _dio.patch('/admin/tenants/$id', data: {
           'licenseExpiresAt': until.toIso8601String().substring(0, 10),

@@ -9,24 +9,33 @@ import '../router/app_router.dart';
 import 'common_widgets.dart';
 
 class _NavItem {
-  const _NavItem(this.path, this.label, this.icon, this.key);
+  const _NavItem(this.path, this.label, this.icon, this.shortcut, this.hint);
   final String path;
   final String label;
   final IconData icon;
-  final LogicalKeyboardKey key;
+  final SingleActivator shortcut;
+  final String hint;
 }
 
 /// Atalhos globais (Windows/Web). F5, F11 e F12 ficam livres para o navegador.
 const _allItems = [
-  _NavItem(Routes.pos, 'PDV', Icons.point_of_sale, LogicalKeyboardKey.f2),
-  _NavItem(Routes.productivity, 'Produtividade', Icons.local_shipping, LogicalKeyboardKey.f3),
-  _NavItem(Routes.company, 'Empresa', Icons.business, LogicalKeyboardKey.f4),
-  _NavItem(Routes.masterAdmin, 'Master', Icons.admin_panel_settings, LogicalKeyboardKey.f6),
-  _NavItem(Routes.about, 'Sobre / Ajuda', Icons.help_outline, LogicalKeyboardKey.f1),
+  _NavItem(Routes.pos, 'PDV', Icons.point_of_sale, SingleActivator(LogicalKeyboardKey.f2), 'F2'),
+  _NavItem(Routes.productivity, 'Produtividade', Icons.local_shipping, SingleActivator(LogicalKeyboardKey.f3), 'F3'),
+  _NavItem(Routes.products, 'Produtos', Icons.inventory_2_outlined, SingleActivator(LogicalKeyboardKey.keyP, alt: true), 'Alt+P'),
+  _NavItem(Routes.partners, 'Clientes e fornecedores', Icons.contacts_outlined,
+      SingleActivator(LogicalKeyboardKey.keyC, alt: true), 'Alt+C'),
+  _NavItem(Routes.finance, 'Financeiro', Icons.account_balance_wallet_outlined,
+      SingleActivator(LogicalKeyboardKey.keyF, alt: true), 'Alt+F'),
+  _NavItem(Routes.purchases, 'Compras (NF-e)', Icons.receipt_long_outlined,
+      SingleActivator(LogicalKeyboardKey.keyN, alt: true), 'Alt+N'),
+  _NavItem(Routes.company, 'Empresa', Icons.business, SingleActivator(LogicalKeyboardKey.f4), 'F4'),
+  _NavItem(Routes.masterAdmin, 'Master', Icons.admin_panel_settings, SingleActivator(LogicalKeyboardKey.f6), 'F6'),
+  _NavItem(Routes.about, 'Sobre / Ajuda', Icons.help_outline, SingleActivator(LogicalKeyboardKey.f1), 'F1'),
 ];
 
-/// Estrutura principal: cabeçalho com a logo da empresa, navegação adaptativa
-/// (NavigationRail no desktop, NavigationBar no celular) e rodapé com créditos.
+/// Estrutura principal: cabeçalho com a logo da empresa, menu adaptativo
+/// (lateral no desktop, gaveta no celular) e rodapé com créditos.
+/// O menu mostra só o que o perfil e os módulos contratados permitem.
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.location, required this.child});
 
@@ -39,15 +48,16 @@ class AppShell extends ConsumerWidget {
     if (session == null) return const SizedBox.shrink();
 
     final items = _allItems.where((i) => canAccess(session, i.path)).toList();
-    final index = items.indexWhere((i) => location.startsWith(i.path)).clamp(0, items.length - 1).toInt();
+    final selected = items.indexWhere((i) => location.startsWith(i.path));
     final compact = Breakpoints.isCompact(context);
+    final wide = Breakpoints.isExpanded(context);
 
     final shortcuts = <ShortcutActivator, VoidCallback>{
-      for (final i in items) SingleActivator(i.key): () => context.go(i.path),
+      for (final i in items) i.shortcut: () => context.go(i.path),
     };
 
     final appBar = AppBar(
-      titleSpacing: 12,
+      titleSpacing: compact ? 0 : 12,
       title: Row(children: [
         CompanyLogo(url: session.tenant.logoUrl, name: session.tenant.nomeFantasia, size: 36),
         const SizedBox(width: 12),
@@ -60,7 +70,7 @@ class AppShell extends ConsumerWidget {
         ),
       ]),
       actions: [
-        if ((session.licenseDaysLeft ?? 99) <= 7 && !session.isSuperAdmin)
+        if ((session.licenseDaysLeft ?? 99) <= 7 && !session.isSuperAdmin && !compact)
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Chip(
@@ -82,40 +92,86 @@ class AppShell extends ConsumerWidget {
       const CreditsFooter(dense: true), // rodapé principal com créditos (todas as plataformas)
     ]);
 
+    Widget navList({required bool showLabels, VoidCallback? afterTap}) => ListView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: [
+            for (var i = 0; i < items.length; i++)
+              _NavTile(
+                item: items[i],
+                selected: i == selected,
+                showLabel: showLabels,
+                onTap: () {
+                  afterTap?.call();
+                  context.go(items[i].path);
+                },
+              ),
+          ],
+        );
+
     return CallbackShortcuts(
       bindings: shortcuts,
       child: Focus(
         autofocus: true,
         child: Scaffold(
           appBar: appBar,
+          drawer: compact
+              ? Drawer(
+                  child: SafeArea(
+                    child: Builder(
+                      builder: (ctx) => navList(showLabels: true, afterTap: () => Navigator.of(ctx).pop()),
+                    ),
+                  ),
+                )
+              : null,
           body: compact
               ? body
               : Row(children: [
-                  NavigationRail(
-                    selectedIndex: index,
-                    extended: Breakpoints.isExpanded(context),
-                    labelType: Breakpoints.isExpanded(context) ? null : NavigationRailLabelType.all,
-                    onDestinationSelected: (i) => context.go(items[i].path),
-                    destinations: [
-                      for (final i in items)
-                        NavigationRailDestination(
-                          icon: Icon(i.icon),
-                          label: Text('${i.label}  (${i.key.keyLabel})'),
-                        ),
-                    ],
-                  ),
+                  SizedBox(width: wide ? 248 : 88, child: navList(showLabels: wide)),
                   const VerticalDivider(width: 1),
                   Expanded(child: body),
                 ]),
-          bottomNavigationBar: compact && items.length >= 2
-              ? NavigationBar(
-                  selectedIndex: index,
-                  onDestinationSelected: (i) => context.go(items[i].path),
-                  destinations: [for (final i in items) NavigationDestination(icon: Icon(i.icon), label: i.label)],
-                )
-              : null,
         ),
       ),
+    );
+  }
+}
+
+class _NavTile extends StatelessWidget {
+  const _NavTile({required this.item, required this.selected, required this.showLabel, required this.onTap});
+  final _NavItem item;
+  final bool selected;
+  final bool showLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final color = selected ? t.colorScheme.onSecondaryContainer : t.colorScheme.onSurfaceVariant;
+    final tile = Material(
+      color: selected ? t.colorScheme.secondaryContainer : Colors.transparent,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: showLabel ? 16 : 0, vertical: 12),
+          child: showLabel
+              ? Row(children: [
+                  Icon(item.icon, color: color),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(item.label,
+                        style: TextStyle(color: color, fontWeight: selected ? FontWeight.w600 : FontWeight.normal)),
+                  ),
+                  Text(item.hint, style: t.textTheme.labelSmall?.copyWith(color: t.colorScheme.outline)),
+                ])
+              : Center(child: Icon(item.icon, color: color)),
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: showLabel ? tile : Tooltip(message: '${item.label} (${item.hint})', child: tile),
     );
   }
 }

@@ -52,6 +52,7 @@ class ReceiptPrinter {
         for (final p in r.payments) line(paymentLabel(p.$1), money(p.$2)),
         if (r.change > 0) line('Troco', money(r.change), style: bold),
         pw.Divider(thickness: .5),
+        if (r.customerName != null) pw.Text('Cliente: ${r.customerName}', style: small),
         if (r.cashier != null) pw.Text('Operador: ${r.cashier}', style: small),
         pw.SizedBox(height: 6),
         pw.Text(r.footer, textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 6)),

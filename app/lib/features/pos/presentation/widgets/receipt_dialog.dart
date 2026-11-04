@@ -50,6 +50,7 @@ class ReceiptDialog extends StatelessWidget {
                   Text(r.companyName, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
                   Text('CNPJ ${formatCnpj(r.cnpj)}', textAlign: TextAlign.center, style: mono),
                   Text(dateTimeBr(r.createdAt), textAlign: TextAlign.center, style: mono),
+                  if (r.customerName != null) Text('Cliente: ${r.customerName}', textAlign: TextAlign.center, style: mono),
                   const Divider(),
                   for (final i in r.items) ...[
                     Text(i.description, style: mono),

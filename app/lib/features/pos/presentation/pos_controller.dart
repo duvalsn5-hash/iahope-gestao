@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../cash/presentation/cash_controller.dart';
+import '../../partners/domain/partner.dart';
 import '../../products/data/products_repository.dart';
 import '../../products/domain/product.dart';
 import '../data/pos_repository.dart';
@@ -56,8 +58,9 @@ class PosController extends Notifier<PosState> {
     final repo = ref.read(productsRepositoryProvider);
     // Códigos numéricos/SKU: busca exata primeiro (leitura do scanner é instantânea)
     if (!text.contains(' ')) {
-      final p = await repo.byCode(text);
-      if (p != null) return ScanAdded(add(p, qty: qty));
+      final hit = await repo.byCode(text);
+      // etiqueta de balança já traz a quantidade pesada
+      if (hit != null) return ScanAdded(add(hit.product, qty: qty ?? hit.scaleQty));
     }
     final list = await repo.search(text);
     if (list.length == 1) return ScanAdded(add(list.first, qty: qty));
@@ -102,22 +105,28 @@ class PosController extends Notifier<PosState> {
       items: items,
       discount: items.isEmpty ? 0 : state.discount,
       selected: items.isEmpty ? null : (index >= items.length ? items.length - 1 : index),
+      customer: state.customer,
     );
   }
 
   void setDiscount(double v) => state = state.copyWith(discount: v.clamp(0, state.subtotal).toDouble());
 
+  void setCustomer(Partner? c) => state = c == null ? state.copyWith(clearCustomer: true) : state.copyWith(customer: c);
+
   void clear() => state = const PosState();
 
-  Future<Receipt> finish(List<Payment> payments, {String? customerDoc}) async {
+  Future<Receipt> finish(List<Payment> payments, {int dueDays = 30}) async {
     final receipt = await ref.read(posRepositoryProvider).closeSale(
           items: state.items,
           payments: payments,
           discount: state.discount,
-          customerDoc: customerDoc,
+          customerId: state.customer?.id,
+          customerDoc: state.customer?.doc,
+          dueDays: dueDays,
         );
     clear();
     ref.invalidate(posSummaryProvider);
+    ref.invalidate(cashControllerProvider); // atualiza o resumo do caixa
     return receipt;
   }
 }

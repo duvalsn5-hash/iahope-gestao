@@ -19,7 +19,9 @@ class AboutScreen extends ConsumerWidget {
     const shortcuts = [
       ('F1', 'Sobre / Ajuda'),
       ('F2', 'PDV (no PDV: foco na busca)'),
-      ('F3', 'Produtividade'),
+      ('F3', 'Produtividade (no PDV: identificar cliente)'),
+      ('Alt+P / Alt+C', 'Produtos / Clientes e fornecedores'),
+      ('Alt+F / Alt+N', 'Financeiro / Compras (NF-e)'),
       ('F4', 'Empresa'),
       ('F6', 'Administração Master'),
       ('F7', 'PDV: quantidade · Produtividade: lançar'),
@@ -27,7 +29,9 @@ class AboutScreen extends ConsumerWidget {
       ('F9', 'PDV: desconto · Cupom: imprimir'),
       ('F10', 'PDV: finalizar / concluir pagamento'),
       ('Ctrl+Del', 'PDV: cancelar venda'),
-      ('Ctrl+N / Ctrl+F', 'Master: novo cliente / buscar'),
+      ('Ctrl+N / Ctrl+F', 'Novo cadastro / buscar (nas telas de cadastro)'),
+      ('Ctrl+I', 'Compras: importar XML da NF-e'),
+      ('F1–F4, F6', 'Pagamento: Dinheiro, PIX, Débito, Crédito, A prazo'),
     ];
 
     return ListView(

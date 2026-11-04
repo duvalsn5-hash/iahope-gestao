@@ -1,3 +1,4 @@
+import '../../partners/domain/partner.dart';
 import '../../products/domain/product.dart';
 
 class CartItem {
@@ -11,7 +12,7 @@ class CartItem {
 
 double _round2(double v) => (v * 100).roundToDouble() / 100;
 
-enum PaymentMethod { dinheiro, pix, debito, credito }
+enum PaymentMethod { dinheiro, pix, debito, credito, prazo }
 
 extension PaymentMethodX on PaymentMethod {
   String get api => switch (this) {
@@ -19,6 +20,7 @@ extension PaymentMethodX on PaymentMethod {
         PaymentMethod.pix => 'PIX',
         PaymentMethod.debito => 'DEBITO',
         PaymentMethod.credito => 'CREDITO',
+        PaymentMethod.prazo => 'PRAZO',
       };
 
   String get label => switch (this) {
@@ -26,6 +28,7 @@ extension PaymentMethodX on PaymentMethod {
         PaymentMethod.pix => 'PIX',
         PaymentMethod.debito => 'Débito',
         PaymentMethod.credito => 'Crédito',
+        PaymentMethod.prazo => 'A prazo',
       };
 }
 
@@ -34,6 +37,7 @@ String paymentLabel(String api) => switch (api) {
       'PIX' => 'PIX',
       'DEBITO' => 'Cartão de débito',
       'CREDITO' => 'Cartão de crédito',
+      'PRAZO' => 'A prazo',
       _ => 'Outros',
     };
 
@@ -47,9 +51,12 @@ class Payment {
 
 /// Estado do PDV (imutável).
 class PosState {
-  const PosState({this.items = const [], this.discount = 0, this.pendingQty, this.selected});
+  const PosState({this.items = const [], this.discount = 0, this.pendingQty, this.selected, this.customer});
 
   final List<CartItem> items;
+
+  /// Cliente identificado (obrigatório para venda a prazo).
+  final Partner? customer;
   final double discount;
   final double? pendingQty; // quantidade digitada antes do código (ex.: "3*")
   final int? selected; // item selecionado no carrinho
@@ -67,12 +74,15 @@ class PosState {
     bool clearPending = false,
     int? selected,
     bool clearSelected = false,
+    Partner? customer,
+    bool clearCustomer = false,
   }) =>
       PosState(
         items: items ?? this.items,
         discount: discount ?? this.discount,
         pendingQty: clearPending ? null : (pendingQty ?? this.pendingQty),
         selected: clearSelected ? null : (selected ?? this.selected),
+        customer: clearCustomer ? null : (customer ?? this.customer),
       );
 }
 
@@ -100,6 +110,7 @@ class Receipt {
     required this.paid,
     required this.change,
     required this.footer,
+    this.customerName,
   });
 
   final String id;
@@ -112,6 +123,7 @@ class Receipt {
   final List<(String, double)> payments;
   final double subtotal, discount, total, paid, change;
   final String footer;
+  final String? customerName;
 
   factory Receipt.fromJson(Map<String, dynamic> j) {
     final c = j['company'] as Map<String, dynamic>;
@@ -136,6 +148,7 @@ class Receipt {
       paid: (j['paid'] as num).toDouble(),
       change: (j['change'] as num).toDouble(),
       footer: j['footer'] as String,
+      customerName: (j['customer'] as Map?)?['name'] as String?,
     );
   }
 }
