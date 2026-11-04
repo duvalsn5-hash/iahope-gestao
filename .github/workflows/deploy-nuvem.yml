@@ -1,0 +1,259 @@
+# =============================================================================
+#  Publicação automática na nuvem gratuita: Neon (banco) + Render (API)
+#  Desenvolvido por Edivaldo.Nascimento - IaHope-Technology
+# =============================================================================
+#  Precisa de 3 segredos em Settings → Secrets and variables → Actions:
+#    NEON_API_KEY     chave de API do Neon (de organização, de preferência)
+#    RENDER_API_KEY   chave de API do Render
+#    MASTER_PASSWORD  senha que você quer para o usuário master (mín. 8)
+#  Opcional: NEON_ORG_ID (só se usar chave PESSOAL do Neon e der erro de org_id)
+#
+#  O que faz (pode rodar de novo quantas vezes quiser — é idempotente):
+#   1. Cria (ou reaproveita) o projeto "iahope-gestao" no Neon, região us-east-1
+#   2. Roda os scripts do banco que faltarem e gera uma senha nova para o app_api
+#   3. Troca a senha do master (e dos usuários demo) para MASTER_PASSWORD
+#   4. Cria (ou atualiza) a API "iahope-gestao-api" no Render, plano Free
+#   5. Espera a API responder em /health
+#   6. Grava o endereço da API em app/api_url.txt e recompila Android/Windows/Web
+#
+#  Nenhuma senha é impressa no log: todas são mascaradas.
+# =============================================================================
+name: Publicar na nuvem (Neon + Render)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['deploy/cloud/RUN']
+
+permissions:
+  contents: write   # gravar app/api_url.txt
+  actions: write    # disparar a recompilação do app
+
+concurrency:
+  group: deploy-nuvem
+  cancel-in-progress: false
+
+env:
+  NEON_PROJECT: iahope-gestao
+  NEON_REGION: aws-us-east-1      # mesma região do Render "virginia"
+  RENDER_SERVICE: iahope-gestao-api
+  RENDER_REGION: virginia
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      MASTER_PASSWORD: ${{ secrets.MASTER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir segredos
+        run: |
+          missing=0
+          for s in NEON_API_KEY RENDER_API_KEY MASTER_PASSWORD; do
+            if [ -z "${!s}" ]; then echo "::error::Falta o segredo $s (Settings → Secrets and variables → Actions)"; missing=1; fi
+          done
+          if [ -n "$MASTER_PASSWORD" ] && [ ${#MASTER_PASSWORD} -lt 8 ]; then
+            echo "::error::MASTER_PASSWORD precisa ter pelo menos 8 caracteres"; missing=1
+          fi
+          exit $missing
+
+      - name: Ferramentas
+        run: |
+          command -v psql >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
+          psql --version; jq --version
+
+      # ---------------------------------------------------------------- NEON
+      - name: Neon — projeto
+        id: neon
+        run: |
+          set -euo pipefail
+          API=https://console.neon.tech/api/v2
+          H=(-H "Authorization: Bearer $NEON_API_KEY" -H "Accept: application/json" -H "Content-Type: application/json")
+          ORGQ=""; [ -n "${NEON_ORG_ID:-}" ] && ORGQ="&org_id=$NEON_ORG_ID"
+
+          call() { # método url [corpo] → corpo da resposta; falha com a mensagem da API (sem segredos)
+            local out code
+            out=$(curl -sS -w '\n%{http_code}' -X "$1" "${H[@]}" "$2" ${3:+-d "$3"})
+            code=$(tail -n1 <<<"$out"); out=$(sed '$d' <<<"$out")
+            if [ "$code" -ge 300 ]; then
+              echo "::error::Neon respondeu $code: $(jq -r '.message // .error // "erro"' <<<"$out" 2>/dev/null || echo erro)" >&2
+              return 1
+            fi
+            printf '%s' "$out"
+          }
+
+          PID=$(call GET "$API/projects?search=$NEON_PROJECT$ORGQ" | jq -r --arg n "$NEON_PROJECT" '[.projects[] | select(.name==$n)][0].id // empty')
+          if [ -z "$PID" ]; then
+            echo "Criando projeto $NEON_PROJECT no Neon ($NEON_REGION)…"
+            BODY=$(jq -n --arg n "$NEON_PROJECT" --arg r "$NEON_REGION" --arg o "${NEON_ORG_ID:-}" \
+              '{project:({name:$n, region_id:$r, pg_version:17,
+                default_endpoint_settings:{autoscaling_limit_min_cu:0.25, autoscaling_limit_max_cu:0.25}}
+                + (if $o == "" then {} else {org_id:$o} end))}')
+            PID=$(call POST "$API/projects" "$BODY" | jq -r '.project.id')
+            echo "Projeto criado: $PID"
+          else
+            echo "Reaproveitando projeto existente: $PID"
+          fi
+
+          # espera o provisionamento terminar
+          for i in $(seq 1 30); do
+            PENDING=$(call GET "$API/projects/$PID/operations" | jq '[.operations[] | select(.status != "finished" and .status != "failed" and .status != "skipped" and .status != "cancelled")] | length')
+            [ "$PENDING" = "0" ] && break; sleep 4
+          done
+
+          OWNER_URI=$(call GET "$API/projects/$PID/connection_uri?database_name=neondb&role_name=neondb_owner" | jq -r '.uri')
+          echo "::add-mask::$OWNER_URI"
+          HOST=$(call GET "$API/projects/$PID/endpoints" | jq -r '[.endpoints[] | select(.type=="read_write")][0].host')
+          POOLER=$(sed -E 's/^(ep-[^.]+)/\1-pooler/' <<<"$HOST")
+
+          echo "OWNER_URI=$OWNER_URI" >> "$GITHUB_ENV"
+          echo "POOLER_HOST=$POOLER" >> "$GITHUB_ENV"
+          echo "Banco: $POOLER"
+
+      - name: Neon — banco de dados (scripts + senhas)
+        run: |
+          set -euo pipefail
+          export PGCONNECT_TIMEOUT=20
+          up=0
+          for i in $(seq 1 10); do
+            if psql "$OWNER_URI" -Atqc 'select 1' >/dev/null 2>&1; then up=1; break; fi
+            echo "aguardando o banco acordar…"; sleep 6
+          done
+          [ "$up" = 1 ] || { echo "::error::Não consegui conectar ao banco do Neon"; exit 1; }
+
+          # senha forte e aleatória para o app_api (regras de entropia do Neon)
+          while :; do
+            APP_PW=$(openssl rand -base64 64 | tr -dc 'A-Za-z0-9' | head -c 32)
+            [[ $APP_PW =~ [A-Z] && $APP_PW =~ [a-z] && $APP_PW =~ [0-9] ]] && ! grep -Eq '(.)\1\1' <<<"$APP_PW" && break
+          done
+          echo "::add-mask::$APP_PW"
+
+          q() { psql "$OWNER_URI" -v ON_ERROR_STOP=1 -Atq "$@"; }
+          if [ "$(q -c "select to_regclass('app.tenants') is not null")" != "t" ]; then
+            echo "Banco vazio → criando tudo (00 → 03)"
+            sed "s|TROQUE-Kq7#vR2m!Lp9xW4z|$APP_PW|" database/00_roles.sql | q -f -
+            q -f database/01_schema.sql
+            q -f database/02_seed.sql >/dev/null
+            q -f database/03_fase1.sql
+          else
+            echo "Schema já existe."
+            if [ "$(q -c "select to_regclass('app.partners') is not null")" != "t" ]; then
+              echo "Aplicando Fase 1 (03_fase1.sql)"; q -f database/03_fase1.sql
+            fi
+          fi
+
+          # sempre gera senha nova para o app_api (e manda para o Render no próximo passo)
+          printf "ALTER ROLE app_api WITH PASSWORD :'pw';\n" | q -v pw="$APP_PW"
+
+          # senha do master e dos usuários de demonstração = MASTER_PASSWORD
+          printf "UPDATE app.users SET password_hash = crypt(:'pw', gen_salt('bf', 10)) WHERE username IN ('master','admin','caixa1');\n" \
+            | q -v pw="$MASTER_PASSWORD"
+
+          DBURL="postgresql://app_api:${APP_PW}@${POOLER_HOST}/neondb?sslmode=require"
+          echo "::add-mask::$DBURL"
+          echo "DATABASE_URL_APP=$DBURL" >> "$GITHUB_ENV"
+
+          # conferência: app_api NÃO pode ignorar o RLS
+          SAFE=$(psql "$DBURL" -Atqc "select not (rolsuper or rolbypassrls) and not exists (select 1 from pg_tables where schemaname='app' and tableowner=current_user) from pg_roles where rolname=current_user")
+          [ "$SAFE" = "t" ] || { echo "::error::app_api está com privilégios demais"; exit 1; }
+          echo "Banco pronto e isolamento por CNPJ conferido."
+
+      # ---------------------------------------------------------------- RENDER
+      - name: Render — API
+        run: |
+          set -euo pipefail
+          API=https://api.render.com/v1
+          H=(-H "Authorization: Bearer $RENDER_API_KEY" -H "Accept: application/json" -H "Content-Type: application/json")
+          call() {
+            local out code
+            out=$(curl -sS -w '\n%{http_code}' -X "$1" "${H[@]}" "$2" ${3:+-d "$3"})
+            code=$(tail -n1 <<<"$out"); out=$(sed '$d' <<<"$out")
+            if [ "$code" -ge 300 ]; then
+              echo "::error::Render respondeu $code: $(jq -r '.message // "erro"' <<<"$out" 2>/dev/null || echo erro)" >&2
+              return 1
+            fi
+            printf '%s' "$out"
+          }
+
+          OWNER=$(call GET "$API/owners?limit=20" | jq -r '.[0].owner.id')
+          ORIGIN="https://${GITHUB_REPOSITORY_OWNER}.github.io"
+          SID=$(call GET "$API/services?name=$RENDER_SERVICE&limit=20" | jq -r --arg n "$RENDER_SERVICE" '[.[] | .service | select(.name==$n)][0].id // empty')
+
+          if [ -z "$SID" ]; then
+            echo "Criando serviço $RENDER_SERVICE (plano Free, $RENDER_REGION)…"
+            BODY=$(jq -n --arg o "$OWNER" --arg n "$RENDER_SERVICE" --arg repo "https://github.com/$GITHUB_REPOSITORY" \
+                         --arg db "$DATABASE_URL_APP" --arg origin "$ORIGIN" --arg r "$RENDER_REGION" '{
+              type:"web_service", name:$n, ownerId:$o, repo:$repo, branch:"main", rootDir:"backend", autoDeploy:"yes",
+              envVars:[
+                {key:"DATABASE_URL", value:$db},
+                {key:"JWT_SECRET", generateValue:true},
+                {key:"STORAGE_DRIVER", value:"db"},
+                {key:"DB_POOL_MAX", value:"5"},
+                {key:"CORS_ORIGIN", value:$origin}
+              ],
+              serviceDetails:{runtime:"docker", plan:"free", region:$r, healthCheckPath:"/health",
+                envSpecificDetails:{dockerfilePath:"./Dockerfile", dockerContext:"."}}
+            }')
+            RES=$(call POST "$API/services" "$BODY")
+            SID=$(jq -r '.service.id // .id' <<<"$RES")
+          else
+            echo "Atualizando serviço existente $SID…"
+            put() { call PUT "$API/services/$SID/env-vars/$1" "$(jq -n --arg v "$2" '{value:$v}')" >/dev/null; }
+            put DATABASE_URL "$DATABASE_URL_APP"
+            put STORAGE_DRIVER db
+            put DB_POOL_MAX 5
+            put CORS_ORIGIN "$ORIGIN"
+            call POST "$API/services/$SID/deploys" '{}' >/dev/null
+          fi
+
+          URL=$(call GET "$API/services/$SID" | jq -r '.serviceDetails.url')
+          echo "API_URL_FINAL=$URL" >> "$GITHUB_ENV"
+          echo "API: $URL"
+
+          echo "Aguardando a API ficar no ar (o 1º build leva 3–8 min)…"
+          for i in $(seq 1 60); do
+            if curl -sf "$URL/health" | grep -q '"ok":true'; then echo "API no ar ✓"; exit 0; fi
+            sleep 15
+          done
+          echo "::error::A API não respondeu em 15 min. Veja os logs do serviço no painel do Render."; exit 1
+
+      - name: Teste de login do master
+        run: |
+          set -euo pipefail
+          BODY=$(jq -n --arg p "$MASTER_PASSWORD" '{cnpj:"11222333000181", username:"master", password:$p}')
+          OK=$(curl -s -X POST "$API_URL_FINAL/auth/login" -H 'Content-Type: application/json' -d "$BODY" | jq -r 'if .token then "ok" else .message end')
+          [ "$OK" = "ok" ] || { echo "::error::Login do master falhou: $OK"; exit 1; }
+          echo "Login do master funcionando ✓"
+
+      # ---------------------------------------------------------------- APPS
+      - name: Apontar os apps para a API e recompilar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$API_URL_FINAL" > app/api_url.txt
+          if ! git diff --quiet -- app/api_url.txt || [ -n "$(git status --porcelain app/api_url.txt)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add app/api_url.txt
+            git commit -m "Endereço da API: $API_URL_FINAL"
+            git push
+          fi
+          gh workflow run app.yml --ref main
+          {
+            echo "## Publicado ✓"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| API | $API_URL_FINAL |"
+            echo "| App Web | https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/ |"
+            echo "| Login Master | CNPJ 11.222.333/0001-81 · usuário **master** · senha = MASTER_PASSWORD |"
+            echo ""
+            echo "O app (Android, Windows e Web) está sendo recompilado com este endereço no fluxo **App Flutter**."
+          } >> "$GITHUB_STEP_SUMMARY"

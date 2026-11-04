@@ -27,8 +27,10 @@ permissions:
   pages: write
   id-token: write
 
+# Endereço da API: variável API_URL do repositório, senão o arquivo app/api_url.txt
+# (gravado pelo fluxo "Publicar na nuvem"), senão localhost.
 env:
-  API_URL: ${{ vars.API_URL || 'http://localhost:3000' }}
+  API_URL_VAR: ${{ vars.API_URL }}
 
 defaults:
   run:
@@ -56,6 +58,12 @@ jobs:
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
       - run: bash tool/setup_platforms.sh && flutter pub get
+      - name: Endereço da API
+        shell: bash
+        run: |
+          U="${API_URL_VAR:-$(cat api_url.txt 2>/dev/null | tr -d '[:space:]')}"
+          echo "API_URL=${U:-http://localhost:3000}" >> "$GITHUB_ENV"
+          echo "API: ${U:-http://localhost:3000}"
       # GitHub Pages publica em /<nome-do-repositorio>/
       - run: >
           flutter build web --release
@@ -85,6 +93,12 @@ jobs:
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
       - run: bash tool/setup_platforms.sh && flutter pub get
+      - name: Endereço da API
+        shell: bash
+        run: |
+          U="${API_URL_VAR:-$(cat api_url.txt 2>/dev/null | tr -d '[:space:]')}"
+          echo "API_URL=${U:-http://localhost:3000}" >> "$GITHUB_ENV"
+          echo "API: ${U:-http://localhost:3000}"
       - run: flutter build apk --release --dart-define=API_URL=${{ env.API_URL }}
       - run: mv build/app/outputs/flutter-apk/app-release.apk build/iahope-gestao.apk
       - uses: actions/upload-artifact@v4
@@ -101,6 +115,12 @@ jobs:
       - run: bash tool/setup_platforms.sh
         shell: bash
       - run: flutter pub get
+      - name: Endereço da API
+        shell: bash
+        run: |
+          U="${API_URL_VAR:-$(cat api_url.txt 2>/dev/null | tr -d '[:space:]')}"
+          echo "API_URL=${U:-http://localhost:3000}" >> "$GITHUB_ENV"
+          echo "API: ${U:-http://localhost:3000}"
       - run: flutter build windows --release --dart-define=API_URL=${{ env.API_URL }}
       - run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/iahope-gestao-windows.zip
         shell: pwsh
