@@ -1,0 +1,38 @@
+# AMBIENTE LOCAL de desenvolvimento: PostgreSQL (schema + RLS + seeds) + API
+#   docker compose up -d --build
+# Para produção em VPS use deploy/vps/.
+# Desenvolvido por Edivaldo.Nascimento - IaHope-Technology
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gestao
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres-troque
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/00_roles.sql:/docker-entrypoint-initdb.d/00_roles.sql:ro
+      - ./database/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gestao"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://app_api:TROQUE-Kq7%23vR2m!Lp9xW4z@db:5432/gestao
+      JWT_SECRET: ${JWT_SECRET:-troque-por-um-segredo-aleatorio-de-64-caracteres-xxxxxxxxxxxxxxxx}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      STORAGE_DRIVER: db
+      CORS_ORIGIN: "*"
+    ports: ["3000:3000"]
+
+volumes:
+  pgdata:

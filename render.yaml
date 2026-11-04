@@ -1,0 +1,24 @@
+# Blueprint do Render — cria a API no plano gratuito a partir deste repositório.
+# Render → New → Blueprint → selecione o repositório.
+# Desenvolvido por Edivaldo.Nascimento - IaHope-Technology
+services:
+  - type: web
+    name: iahope-gestao-api
+    runtime: docker
+    plan: free
+    region: virginia          # mesma região do Neon (AWS us-east-1) → consultas rápidas
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL     # string do app_api no Neon (preencher no painel)
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: STORAGE_DRIVER
+        value: db
+      - key: DB_POOL_MAX
+        value: "5"
+      - key: CORS_ORIGIN      # troque pelo domínio do app Web quando publicar
+        value: "*"

@@ -1,0 +1,66 @@
+# =============================================================================
+#  PRODUÇÃO EM VPS (hosting próprio): Caddy (HTTPS automático) + API + PostgreSQL
+#  Um servidor só serve: app Web, API e banco.
+#
+#    cd deploy/vps
+#    cp .env.example .env      # preencha domínios e senhas
+#    docker compose up -d --build
+#
+#  Desenvolvido por Edivaldo.Nascimento - IaHope-Technology
+# =============================================================================
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/web:ro            # conteúdo de app/build/web
+      - caddy_data:/data             # certificados HTTPS
+    depends_on: [api]
+
+  api:
+    build: ../../backend
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://app_api:${APP_API_PASSWORD_URLENCODED}@db:5432/gestao
+      DB_POOL_MAX: 15
+      JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: https://${API_DOMAIN}
+      CORS_ORIGIN: https://${APP_DOMAIN}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-db}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads         # usado só com STORAGE_DRIVER=local
+    depends_on:
+      db: { condition: service_healthy }
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gestao
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../../database/00_roles.sql:/docker-entrypoint-initdb.d/00_roles.sql:ro
+      - ../../database/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      # Seeds só numa instalação NOVA. Vindo do Neon, comente a linha abaixo
+      # e importe os dados (ver docs/MIGRAR_PARA_HOSTING.md).
+      - ../../database/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d gestao"]
+      interval: 5s
+      retries: 20
+    # banco NÃO fica exposto à internet (sem "ports")
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:

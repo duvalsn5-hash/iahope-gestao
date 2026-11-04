@@ -1,0 +1,33 @@
+name: iahope_gestao
+description: "Gestão Operacional, Logística e PDV — Desenvolvido por Edivaldo.Nascimento - IaHope-Technology"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1      # gerenciamento de estado (Notifier/AsyncNotifier, sem codegen)
+  go_router: ^14.6.0            # rotas com redirect por sessão/perfil
+  dio: ^5.7.0                   # HTTP + interceptors (JWT, bloqueio)
+  shared_preferences: ^2.3.3    # token + último CNPJ
+  intl: ^0.19.0                 # moeda/data pt_BR
+  file_picker: ^8.1.4           # upload da logo (Android/Windows/Web)
+  mobile_scanner: ^6.0.2        # câmera como leitor no Android
+  pdf: ^3.11.1                  # cupom 80mm com logo
+  printing: ^5.13.4             # impressão/compartilhamento do cupom
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+backend/.env
+backend/uploads/
+app/build/
+app/.dart_tool/
+app/.flutter-plugins*
+app/pubspec.lock

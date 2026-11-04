@@ -1,0 +1,15 @@
+# HTTPS automático (Let's Encrypt) para os dois domínios.
+# Aponte os DNS (registro A) de APP_DOMAIN e API_DOMAIN para o IP da VPS.
+
+{$API_DOMAIN} {
+	encode gzip
+	reverse_proxy api:3000
+}
+
+{$APP_DOMAIN} {
+	encode gzip
+	root * /srv/web
+	try_files {path} /index.html
+	file_server
+	header /assets/* Cache-Control "public, max-age=604800"
+}

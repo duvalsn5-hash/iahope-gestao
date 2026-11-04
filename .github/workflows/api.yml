@@ -1,0 +1,39 @@
+# Verifica a API e o banco a cada push: sobe um PostgreSQL limpo, aplica os
+# scripts como dono SEM superusuário (igual ao Neon), roda os testes de RLS
+# e compila a API. O deploy em si é feito pelo Render (autoDeploy).
+# Desenvolvido por Edivaldo.Nascimento - IaHope-Technology
+name: API e banco
+
+on:
+  push:
+    paths: ['backend/**', 'database/**', '.github/workflows/api.yml']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Banco como no Neon (dono sem superusuário)
+        run: |
+          psql -U postgres -c "CREATE ROLE neondb_owner LOGIN PASSWORD 'owner' CREATEROLE CREATEDB"
+          psql -U postgres -c "CREATE DATABASE neondb OWNER neondb_owner"
+          for f in 00_roles 01_schema 02_seed; do
+            PGPASSWORD=owner psql -U neondb_owner -d neondb -v ON_ERROR_STOP=1 -q -f database/$f.sql
+          done
+      - name: Testes de isolamento (RLS) como app_api
+        run: PGPASSWORD='TROQUE-Kq7#vR2m!Lp9xW4z' psql -U app_api -d neondb -v ON_ERROR_STOP=1 -f database/03_rls_tests.sql
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: backend/package-lock.json }
+      - run: npm ci && npm run build
+        working-directory: backend

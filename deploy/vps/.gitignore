@@ -1,0 +1,4 @@
+.env
+backups/
+web/*
+!web/LEIA-ME.txt
