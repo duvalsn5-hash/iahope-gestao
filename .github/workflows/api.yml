@@ -28,11 +28,11 @@ jobs:
         run: |
           psql -U postgres -c "CREATE ROLE neondb_owner LOGIN PASSWORD 'owner' CREATEROLE CREATEDB"
           psql -U postgres -c "CREATE DATABASE neondb OWNER neondb_owner"
-          for f in 00_roles 01_schema 02_seed; do
+          for f in 00_roles 01_schema 02_seed 03_fase1; do
             PGPASSWORD=owner psql -U neondb_owner -d neondb -v ON_ERROR_STOP=1 -q -f database/$f.sql
           done
       - name: Testes de isolamento (RLS) como app_api
-        run: PGPASSWORD='TROQUE-Kq7#vR2m!Lp9xW4z' psql -U app_api -d neondb -v ON_ERROR_STOP=1 -f database/03_rls_tests.sql
+        run: PGPASSWORD='TROQUE-Kq7#vR2m!Lp9xW4z' psql -U app_api -d neondb -v ON_ERROR_STOP=1 -f database/99_rls_tests.sql
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: backend/package-lock.json }
       - run: npm ci && npm run build

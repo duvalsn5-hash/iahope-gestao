@@ -15,6 +15,10 @@ import { productivityRouter } from './modules/productivity/productivity.routes';
 import { productsRouter } from './modules/products/products.routes';
 import { posRouter } from './modules/pos/pos.routes';
 import { publicRouter } from './modules/public/public.routes';
+import { partnersRouter } from './modules/partners/partners.routes';
+import { cashRouter } from './modules/cash/cash.routes';
+import { financeRouter } from './modules/finance/finance.routes';
+import { purchasesRouter } from './modules/purchases/purchases.routes';
 import { assertSafeDbRole } from './db/safety';
 
 export const app = express();
@@ -24,7 +28,7 @@ app.set('trust proxy', 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } })); // logo carregada pelo app Web
 app.use(cors({ origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(',') }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '2mb' }));
 if (env.STORAGE_DRIVER === 'local') {
   app.use('/uploads', express.static(path.resolve(env.UPLOAD_DIR), { maxAge: '7d', index: false }));
 }
@@ -38,6 +42,10 @@ app.use('/company', companyRouter);
 app.use('/products', productsRouter);
 app.use('/productivity', productivityRouter);
 app.use('/pos', posRouter);
+app.use('/partners', partnersRouter);
+app.use('/cash', cashRouter);
+app.use('/finance', financeRouter);
+app.use('/purchases', purchasesRouter);
 
 app.use(errorHandler);
 

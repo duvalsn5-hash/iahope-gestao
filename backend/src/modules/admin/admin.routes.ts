@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { db, requireAuth, requireRole } from '../../middleware/auth';
+import { ALL_MODULES, db, requireAuth, requireRole } from '../../middleware/auth';
 import { HttpError } from '../../middleware/errors';
 import { isValidCnpj, onlyDigits } from '../../utils/cnpj';
 import { absoluteUrl } from '../auth/auth.routes';
@@ -26,6 +26,7 @@ const mapTenant = (t: any) => ({
   maxUsers: t.max_users,
   usersCount: Number(t.users_count ?? 0),
   isPlatform: t.is_platform,
+  modules: t.modules ?? [],
   createdAt: t.created_at,
 });
 
@@ -151,6 +152,26 @@ adminRouter.patch('/tenants/:id', async (req, res) => {
     if (!r.rows[0]) throw new HttpError(404, 'NAO_ENCONTRADO', 'Empresa não encontrada');
     await c.query(`INSERT INTO app.audit_log (tenant_id, user_id, action, details) VALUES ($1, $2, 'TENANT_ATUALIZADO', $3)`, [
       req.params.id, req.auth!.sub, b,
+    ]);
+    return r.rows[0];
+  });
+  res.json(mapTenant(t));
+});
+
+const modulesSchema = z.object({ modules: z.array(z.enum(ALL_MODULES as [string, ...string[]])) });
+
+/** PATCH /admin/tenants/:id/modules — liga/desliga módulos contratados (planos) */
+adminRouter.patch('/tenants/:id/modules', async (req, res) => {
+  const b = modulesSchema.parse(req.body);
+  const modules = [...new Set(b.modules)];
+  const t = await db(req, async (c) => {
+    const r = await c.query('UPDATE app.tenants SET modules = $2 WHERE id = $1 AND NOT is_platform RETURNING *', [
+      req.params.id,
+      modules,
+    ]);
+    if (!r.rows[0]) throw new HttpError(404, 'NAO_ENCONTRADO', 'Empresa não encontrada');
+    await c.query(`INSERT INTO app.audit_log (tenant_id, user_id, action, details) VALUES ($1, $2, 'TENANT_MODULOS', $3)`, [
+      req.params.id, req.auth!.sub, { modules },
     ]);
     return r.rows[0];
   });

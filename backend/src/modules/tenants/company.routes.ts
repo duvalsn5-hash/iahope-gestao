@@ -47,6 +47,8 @@ companyRouter.get('/', async (req, res) => {
     primaryColor: t.primary_color,
     licenseExpiresAt: t.license_expires_at,
     status: t.status,
+    modules: t.modules ?? [],
+    scaleConfig: t.scale_config,
   });
 });
 
@@ -77,6 +79,27 @@ companyRouter.delete('/logo', requireRole('ADMIN', 'SUPER_ADMIN'), async (req, r
 const brandSchema = z.object({
   nomeFantasia: z.string().trim().min(2).optional(),
   primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+});
+
+/**
+ * Etiqueta de balança (EAN-13 começando com o prefixo, normalmente "2"):
+ *   prefixo(1) + código do produto(codeLength) + … + valor(valueLength) + dígito verificador(1)
+ * valueType: PRECO = total em centavos · PESO = gramas
+ */
+export const scaleSchema = z
+  .object({
+    prefix: z.string().regex(/^\d$/),
+    codeLength: z.number().int().min(4).max(6),
+    valueLength: z.number().int().min(5).max(6),
+    valueType: z.enum(['PRECO', 'PESO']),
+  })
+  .refine((c) => 1 + c.codeLength <= 12 - c.valueLength, 'Código e valor não cabem em 13 dígitos');
+
+/** PUT /company/scale — configuração da etiqueta de balança */
+companyRouter.put('/scale', requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  const cfg = scaleSchema.parse(req.body);
+  await db(req, (c) => c.query('UPDATE app.tenants SET scale_config = $2 WHERE id = $1', [req.auth!.tid, cfg]));
+  res.json(cfg);
 });
 
 /** PATCH /company — nome fantasia e cor da marca */

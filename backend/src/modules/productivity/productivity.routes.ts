@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { db, requireAuth, requireRole } from '../../middleware/auth';
+import { db, requireAuth, requireModule, requireRole } from '../../middleware/auth';
 
 /** Produtividade de descarga hora a hora + ordens logísticas */
 export const productivityRouter = Router();
-productivityRouter.use(requireAuth);
+productivityRouter.use(requireAuth, requireModule('PRODUTIVIDADE'));
 
 const recordSchema = z.object({
   hourStart: z.string().datetime({ offset: true }).optional(), // padrão: hora cheia atual

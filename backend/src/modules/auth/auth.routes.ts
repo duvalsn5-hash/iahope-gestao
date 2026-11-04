@@ -80,6 +80,7 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
       logoUrl: absoluteUrl(u.logo_url),
       primaryColor: u.primary_color,
       licenseExpiresAt: u.license_expires_at,
+      modules: u.modules ?? [],
     },
     credits: CREDITS,
   });
@@ -102,6 +103,8 @@ authRouter.get('/me', requireAuth, async (req, res) => {
       logoUrl: absoluteUrl(data.t.logo_url),
       primaryColor: data.t.primary_color,
       licenseExpiresAt: data.t.license_expires_at,
+      modules: data.t.modules ?? [],
+      scaleConfig: data.t.scale_config,
     },
     credits: CREDITS,
   });

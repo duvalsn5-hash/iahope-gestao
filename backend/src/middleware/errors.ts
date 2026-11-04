@@ -21,7 +21,9 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
     return res.status(err.status).json({ error: err.code, message: err.message });
   }
   if (err instanceof ZodError) {
-    return res.status(400).json({ error: 'VALIDACAO', message: 'Dados inválidos', issues: err.issues });
+    const first = err.issues[0];
+    const field = first?.path?.length ? `${first.path.join('.')}: ` : '';
+    return res.status(400).json({ error: 'VALIDACAO', message: `Dados inválidos — ${field}${first?.message ?? ''}`, issues: err.issues });
   }
   if (err?.code && PG_ERRORS[err.code]) {
     const [status, msg] = PG_ERRORS[err.code];

@@ -11,3 +11,15 @@ export function isValidCnpj(value: string): boolean {
   };
   return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
 }
+
+export function isValidCpf(value: string): boolean {
+  const d = onlyDigits(value);
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const calc = (len: number) => {
+    let s = 0;
+    for (let i = 0; i < len; i++) s += Number(d[i]) * (len + 1 - i);
+    const r = (s * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return calc(9) === Number(d[9]) && calc(10) === Number(d[10]);
+}

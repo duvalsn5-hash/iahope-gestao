@@ -14,10 +14,14 @@ export interface JwtPayload {
   role: Role;
 }
 
+/** Módulos contratáveis (o Master liga/desliga por empresa). */
+export type Module = 'PDV' | 'PRODUTIVIDADE' | 'FINANCEIRO' | 'COMPRAS' | 'BALANCA';
+export const ALL_MODULES: Module[] = ['PDV', 'PRODUTIVIDADE', 'FINANCEIRO', 'COMPRAS', 'BALANCA'];
+
 declare global {
   namespace Express {
     interface Request {
-      auth?: JwtPayload;
+      auth?: JwtPayload & { modules: string[] };
     }
   }
 }
@@ -50,13 +54,13 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     return next(new HttpError(401, 'TOKEN_INVALIDO', 'Sessão expirada, faça login novamente'));
   }
 
-  const { rows } = await publicQuery('SELECT ok, reason FROM app.session_check($1, $2)', [payload.sub, payload.tid]);
+  const { rows } = await publicQuery('SELECT ok, reason, modules FROM app.session_check($1, $2)', [payload.sub, payload.tid]);
   const check = rows[0];
   if (!check?.ok) {
     const reason = check?.reason ?? 'USUARIO_INEXISTENTE';
     return next(new HttpError(403, reason, REASONS[reason] ?? 'Acesso negado'));
   }
-  req.auth = payload;
+  req.auth = { ...payload, modules: check.modules ?? [] };
   next();
 }
 
@@ -66,6 +70,17 @@ export function requireRole(...roles: Role[]) {
       return next(new HttpError(403, 'SEM_PERMISSAO', 'Seu perfil não tem acesso a esta função'));
     }
     next();
+  };
+}
+
+/**
+ * Bloqueia rotas de módulos que a empresa não contratou.
+ * O Master (SUPER_ADMIN) passa sempre, para dar suporte.
+ */
+export function requireModule(module: Module) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (req.auth?.role === 'SUPER_ADMIN' || req.auth?.modules.includes(module)) return next();
+    next(new HttpError(403, 'MODULO_INATIVO', `O módulo ${module} não está ativo para esta empresa`));
   };
 }
 

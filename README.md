@@ -61,7 +61,7 @@ gestao-iahope/
 │   ├── 00_roles.sql         # cria o usuário app_api (troque a senha)
 │   ├── 01_schema.sql        # DDL completo, RLS, funções, triggers, permissões
 │   ├── 02_seed.sql          # Super Admin + empresa demo + produtos
-│   └── 03_rls_tests.sql     # 13 testes de isolamento (rodar como app_api, em banco de teste)
+│   └── 99_rls_tests.sql     # 13 testes de isolamento (rodar como app_api, em banco de teste)
 ├── docs/                    # DEPLOY_GRATIS.md · MIGRAR_PARA_HOSTING.md
 ├── deploy/vps/              # produção em VPS: Caddy (HTTPS) + API + Postgres
 ├── render.yaml              # API no Render (plano Free) em 1 clique
@@ -123,7 +123,7 @@ psql -U postgres -d gestao -f database/00_roles.sql   # troque a senha antes
 psql -U postgres -d gestao -f database/01_schema.sql
 psql -U postgres -d gestao -f database/02_seed.sql
 # testes de isolamento — SÓ em banco de teste (devem terminar em "Todos os testes de RLS passaram.")
-psql -U app_api -d gestao -f database/03_rls_tests.sql
+psql -U app_api -d gestao -f database/99_rls_tests.sql
 ```
 
 > Não precisa de superusuário: os scripts funcionam no Neon, Supabase e qualquer Postgres gerenciado.
@@ -283,7 +283,7 @@ F5, F11 e F12 ficam livres de propósito (o navegador usa para recarregar, tela 
 - [ ] Publicar a API atrás de HTTPS (Nginx/Caddy) e definir `PUBLIC_BASE_URL` com o domínio real.
 - [ ] Restringir `CORS_ORIGIN` ao domínio do app Web.
 - [ ] Backup diário do PostgreSQL (`deploy/vps/backup.sh`; com `STORAGE_DRIVER=db` as logos já vão junto).
-- [ ] Rodar `03_rls_tests.sql` após qualquer mudança no schema.
+- [ ] Rodar `99_rls_tests.sql` após qualquer mudança no schema.
 
 ---
 

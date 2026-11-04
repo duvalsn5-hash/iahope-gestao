@@ -1,6 +1,6 @@
 -- =============================================================================
 --  Testes de isolamento RLS — rode conectado como app_api:
---    psql -U app_api -d gestao -v ON_ERROR_STOP=1 -f 03_rls_tests.sql
+--    psql -U app_api -d gestao -v ON_ERROR_STOP=1 -f 99_rls_tests.sql
 --  Cada bloco termina em ROLLBACK, nada fica gravado.
 -- =============================================================================
 \set QUIET on
@@ -98,6 +98,7 @@ END $$;
 DO $$ DECLARE sid uuid; pid uuid; before numeric; after numeric; BEGIN
   SELECT id, stock_qty INTO pid, before FROM app.products WHERE sku = 'CX-001';
   PERFORM set_config('app.user_id', (SELECT id::text FROM app.users WHERE username = 'caixa1'), true);
+  PERFORM app.open_cash_session(50);   -- Fase 1: venda exige caixa aberto
   sid := app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pid, 'qty', 3)),
                         '[{"method":"DINHEIRO","amount":20}]');
   SELECT stock_qty INTO after FROM app.products WHERE id = pid;
@@ -169,6 +170,118 @@ DO $$ BEGIN
          'PERIGO: este usuário tem BYPASSRLS/superuser.';
   RAISE NOTICE 'OK 6: usuário da API não é dono nem ignora RLS';
 END $$;
+
+-- ================================================================ FASE 1
+-- ---------------------------------------------------------------- 7. clientes/fornecedores isolados
+BEGIN;
+SELECT set_config('app.role', 'SUPER_ADMIN', true);
+INSERT INTO app.partners (tenant_id, kind, doc, name)
+  SELECT id, 'CLIENTE', '52998224725', 'Cliente secreto da Outra' FROM app.tenants WHERE cnpj = '45723174000110';
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  ASSERT (SELECT count(*) FROM app.partners WHERE name LIKE '%secreto%') = 0, 'vazou cliente de outra empresa';
+  -- o mesmo CPF pode existir em outra empresa
+  INSERT INTO app.partners (kind, doc, name) VALUES ('CLIENTE', '52998224725', 'Cliente da Demo');
+  BEGIN
+    INSERT INTO app.partners (kind, doc, name) VALUES ('CLIENTE', '12345678900', 'CPF inválido');
+    RAISE EXCEPTION 'FALHA: aceitou CPF inválido';
+  EXCEPTION WHEN check_violation THEN NULL; END;
+  RAISE NOTICE 'OK 7: clientes isolados por empresa e CPF validado';
+END $$;
+ROLLBACK;
+
+-- ---------------------------------------------------------------- 8. caixa + venda a prazo
+BEGIN;
+SELECT set_config('app.role', 'CAIXA', true);
+DO $$ DECLARE pid uuid; cid uuid; sid uuid; v jsonb; BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','caixa1') u), true);
+  PERFORM set_config('app.user_id', (SELECT u.user_id::text FROM app.auth_lookup('11444777000161','caixa1') u), true);
+  SELECT id INTO pid FROM app.products WHERE sku = 'FT-002';   -- R$ 7,50
+  BEGIN
+    PERFORM app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pid, 'qty', 1)), '[{"method":"PIX","amount":7.5}]');
+    RAISE EXCEPTION 'FALHA: vendeu sem caixa aberto';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+
+  PERFORM app.open_cash_session(100);
+  PERFORM app.cash_movement('SUPRIMENTO', 20, 'troco extra');
+  PERFORM app.cash_movement('SANGRIA', 30, 'cofre');
+  -- dinheiro: 10 por 7,50 → troco 2,50 (entra 7,50 líquido)
+  PERFORM app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pid, 'qty', 1)), '[{"method":"DINHEIRO","amount":10}]');
+  -- troco não pode sair do cartão
+  BEGIN
+    PERFORM app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pid, 'qty', 1)), '[{"method":"DEBITO","amount":10}]');
+    RAISE EXCEPTION 'FALHA: deu troco em cartão';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  -- a prazo sem cliente → erro; com cliente → gera conta a receber
+  BEGIN
+    PERFORM app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pid, 'qty', 2)), '[{"method":"PRAZO","amount":15}]');
+    RAISE EXCEPTION 'FALHA: vendeu a prazo sem cliente';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  INSERT INTO app.partners (kind, doc, name) VALUES ('CLIENTE', '52998224725', 'Maria') RETURNING id INTO cid;
+  sid := app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pid, 'qty', 2)),
+                        '[{"method":"PRAZO","amount":15}]', 0, NULL, false, cid, 15);
+  ASSERT (SELECT count(*) FROM app.financial_entries WHERE ref_id = sid AND kind = 'RECEBER'
+            AND amount = 15 AND due_date = current_date + 15) = 1, 'não gerou conta a receber';
+  -- recebe 5 em dinheiro pelo caixa
+  PERFORM app.settle_entry((SELECT id FROM app.financial_entries WHERE ref_id = sid), 5, 'DINHEIRO', true);
+  ASSERT (SELECT status FROM app.financial_entries WHERE ref_id = sid) = 'PARCIAL', 'baixa parcial falhou';
+  -- esperado na gaveta: 100 + 20 - 30 + 7,50 + 5 = 102,50
+  v := app.close_cash_session(102.50, 'ok');
+  ASSERT (v->>'expectedCash')::numeric = 102.50, format('esperado errado: %s', v->>'expectedCash');
+  ASSERT (v->>'difference')::numeric = 0, 'diferença errada';
+  ASSERT (v->>'salesCount')::int = 2, 'contagem de vendas errada';
+  RAISE NOTICE 'OK 8: caixa (abre, sangria, suprimento, fecha = R$ 102,50) e venda a prazo → a receber';
+END $$;
+ROLLBACK;
+
+-- ---------------------------------------------------------------- 9. entrada de NF-e
+BEGIN;
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ DECLARE pid uuid; before numeric; pur uuid; nf jsonb; BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  PERFORM set_config('app.user_id', (SELECT u.user_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  SELECT id, stock_qty INTO pid, before FROM app.products WHERE sku = 'FT-002';
+  nf := jsonb_build_object(
+    'supplier', jsonb_build_object('doc', '45.723.174/0001-10', 'name', 'Fornecedor Teste LTDA'),
+    'accessKey', '25261145723174000110550010000012341000012345', 'number', '1234', 'series', '1',
+    'issueDate', current_date, 'total', 300,
+    'items', jsonb_build_array(
+       jsonb_build_object('supplierCode', 'F-77', 'description', 'FITA 45MM CX C/12', 'qty', 5, 'unitPrice', 36,
+                          'total', 180, 'factor', 12, 'productId', pid),
+       jsonb_build_object('supplierCode', 'F-88', 'description', 'LACRE PLASTICO', 'qty', 100, 'unitPrice', 1.2,
+                          'total', 120, 'factor', 1,
+                          'newProduct', jsonb_build_object('sku', 'LC-006', 'name', 'Lacre plástico', 'price', 2.5))),
+    'installments', jsonb_build_array(
+       jsonb_build_object('document', '001', 'dueDate', current_date + 30, 'amount', 150),
+       jsonb_build_object('document', '002', 'dueDate', current_date + 60, 'amount', 150)));
+  pur := app.register_purchase(nf);
+  ASSERT (SELECT stock_qty FROM app.products WHERE id = pid) = before + 60, 'estoque não entrou (5 cx × 12)';
+  ASSERT (SELECT cost FROM app.products WHERE id = pid) = 3.00, 'custo unitário errado (180 / 60)';
+  ASSERT (SELECT stock_qty FROM app.products WHERE sku = 'LC-006') = 100, 'produto novo não criado';
+  ASSERT (SELECT count(*) FROM app.financial_entries WHERE ref_id = pur AND kind = 'PAGAR') = 2, 'duplicatas não viraram contas a pagar';
+  ASSERT (SELECT kind FROM app.partners WHERE doc = '45723174000110') = 'FORNECEDOR', 'fornecedor não cadastrado';
+  ASSERT (SELECT product_id FROM app.supplier_product_codes WHERE supplier_code = 'F-77') = pid, 'não aprendeu o código do fornecedor';
+  BEGIN
+    PERFORM app.register_purchase(nf);
+    RAISE EXCEPTION 'FALHA: lançou a mesma nota duas vezes';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  RAISE NOTICE 'OK 9: NF-e de compra → estoque (+60 com fator 12), custo, fornecedor, 2 contas a pagar; duplicada bloqueada';
+END $$;
+ROLLBACK;
+
+-- ---------------------------------------------------------------- 10. módulos só pelo Master
+BEGIN;
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  BEGIN
+    UPDATE app.tenants SET modules = ARRAY['PDV','PRODUTIVIDADE','FINANCEIRO','COMPRAS','BALANCA'];
+    RAISE EXCEPTION 'FALHA: cliente ativou módulo sozinho';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  RAISE NOTICE 'OK 10: só o Master liga/desliga módulos';
+END $$;
+ROLLBACK;
 
 -- limpeza
 BEGIN;
