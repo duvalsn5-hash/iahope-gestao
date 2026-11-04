@@ -1,0 +1,37 @@
+# Cria uma versão oficial (Release) com links fixos do APK e do Windows.
+# Para lançar: mude o número no arquivo RELEASE (ex.: 1.0.1) e envie ao GitHub.
+# Desenvolvido por Edivaldo.Nascimento - IaHope-Technology
+name: Nova versão
+
+on:
+  push:
+    branches: [main]
+    paths: ['RELEASE']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Criar tag e compilar a versão
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="v$(tr -d '[:space:]' < RELEASE)"
+          [[ $V =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::RELEASE deve conter algo como 1.0.0"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/$V" >/dev/null; then
+            echo "::error::A versão $V já existe. Aumente o número em RELEASE."; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$V" -m "IaHope Gestão $V"
+          git push origin "$V"
+          # tag criada pelo GITHUB_TOKEN não dispara fluxos sozinha → dispara a compilação nela
+          gh workflow run app.yml --ref "$V"
+          echo "Versão $V criada; compilando Android e Windows para a Release." >> "$GITHUB_STEP_SUMMARY"
