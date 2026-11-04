@@ -36,20 +36,20 @@ class _CompanySettingsScreenState extends ConsumerState<CompanySettingsScreen> {
   }
 
   Future<void> _pickLogo() async {
-    final result = await FilePicker.platform.pickFiles(
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
-      withData: true, // bytes em todas as plataformas (inclusive Web)
     );
-    final file = result?.files.single;
-    if (file == null || file.bytes == null) return;
-    if (file.size > 2 * 1024 * 1024) {
+    if (file == null) return;
+    // bytes em todas as plataformas (inclusive Web)
+    final bytes = await file.readAsBytes();
+    if (bytes.length > 2 * 1024 * 1024) {
       if (mounted) showError(context, 'A logo deve ter no máximo 2 MB');
       return;
     }
     setState(() => _uploading = true);
     try {
-      final url = await ref.read(companyRepositoryProvider).uploadLogo(file.bytes!, file.name);
+      final url = await ref.read(companyRepositoryProvider).uploadLogo(bytes, file.name);
       final s = ref.read(sessionControllerProvider)!;
       await ref.read(sessionControllerProvider.notifier).updateTenant(s.tenant.copyWith(logoUrl: url));
       if (mounted) showOk(context, 'Logo atualizada');

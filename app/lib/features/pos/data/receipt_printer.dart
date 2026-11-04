@@ -20,8 +20,8 @@ class ReceiptPrinter {
     }
 
     final doc = pw.Document(title: 'Cupom ${r.number}', author: r.footer);
-    final small = pw.TextStyle(fontSize: 8);
-    final bold = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
+    const small = pw.TextStyle(fontSize: 8);
+    const bold = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
 
     pw.Widget line(String l, String rgt, {pw.TextStyle? style}) => pw.Row(children: [
           pw.Expanded(child: pw.Text(l, style: style ?? small)),
@@ -47,14 +47,14 @@ class ReceiptPrinter {
         pw.Divider(thickness: .5),
         line('Subtotal', money(r.subtotal)),
         if (r.discount > 0) line('Desconto', '- ${money(r.discount)}'),
-        line('TOTAL', money(r.total), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+        line('TOTAL', money(r.total), style: const pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 4),
         for (final p in r.payments) line(paymentLabel(p.$1), money(p.$2)),
         if (r.change > 0) line('Troco', money(r.change), style: bold),
         pw.Divider(thickness: .5),
         if (r.cashier != null) pw.Text('Operador: ${r.cashier}', style: small),
         pw.SizedBox(height: 6),
-        pw.Text(r.footer, textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 6)),
+        pw.Text(r.footer, textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 6)),
       ]),
     ));
 

@@ -18,6 +18,13 @@ if ! grep -q 'android.permission.CAMERA' "$MANIFEST"; then
   rm -f "$MANIFEST.bak"
 fi
 
+# Android 7.0+ (SDK 24): exigido pelo leitor de código por câmera (mobile_scanner 7)
+for G in android/app/build.gradle.kts android/app/build.gradle; do
+  if [ -f "$G" ]; then
+    sed -i.bak -E 's/minSdk( =|Version) flutter\.minSdkVersion/minSdk\1 24/' "$G" && rm -f "$G.bak"
+  fi
+done
+
 # título da aba no navegador
 if [ -f web/index.html ]; then
   sed -i.bak 's#<title>.*</title>#<title>IaHope Gestão — Edivaldo.Nascimento - IaHope-Technology</title>#' web/index.html && rm -f web/index.html.bak

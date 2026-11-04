@@ -74,9 +74,9 @@ class AboutScreen extends ConsumerWidget {
                         title: const Text('Licença'),
                         subtitle: Text('Válida até ${dateBr(s.tenant.licenseExpiresAt)}'),
                       ),
-                    ListTile(
-                      leading: const Icon(Icons.dns_outlined),
-                      title: const Text('Servidor'),
+                    const ListTile(
+                      leading: Icon(Icons.dns_outlined),
+                      title: Text('Servidor'),
                       subtitle: Text(AppConfig.apiUrl),
                     ),
                   ]),

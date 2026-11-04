@@ -61,10 +61,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _debounce?.cancel();
     final d = onlyDigits(v);
     if (d.length < 14) {
-      if (_branding != null || _brandingError != null) setState(() {
-        _branding = null;
-        _brandingError = null;
-      });
+      if (_branding != null || _brandingError != null) {
+        setState(() {
+          _branding = null;
+          _brandingError = null;
+        });
+      }
       return;
     }
     if (!isValidCnpj(d)) {
@@ -88,10 +90,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       setState(() => _branding = b);
       if (_user.text.isEmpty) _userFocus.requestFocus();
     } catch (e) {
-      if (mounted) setState(() {
-        _branding = null;
-        _brandingError = e.toString();
-      });
+      if (mounted) {
+        setState(() {
+          _branding = null;
+          _brandingError = e.toString();
+        });
+      }
     } finally {
       if (mounted) setState(() => _loadingBranding = false);
     }

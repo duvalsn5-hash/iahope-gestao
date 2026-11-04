@@ -337,7 +337,7 @@ class _RecordDialogState extends State<_RecordDialog> {
           child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               DropdownButtonFormField<String?>(
-                value: _orderId,
+                initialValue: _orderId,
                 isExpanded: true,
                 decoration: dec('Carga (opcional)'),
                 items: [
