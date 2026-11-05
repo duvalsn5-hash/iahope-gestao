@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/domain/session.dart';
 import '../../features/auth/presentation/session_controller.dart';
+import '../../features/users/presentation/change_password_dialog.dart';
 import '../router/app_router.dart';
 import 'common_widgets.dart';
 
@@ -20,6 +21,7 @@ class _NavItem {
 /// Atalhos globais (Windows/Web). F5, F11 e F12 ficam livres para o navegador.
 const _allItems = [
   _NavItem(Routes.pos, 'PDV', Icons.point_of_sale, SingleActivator(LogicalKeyboardKey.f2), 'F2'),
+  _NavItem(Routes.workshop, 'Oficina', Icons.two_wheeler, SingleActivator(LogicalKeyboardKey.keyO, alt: true), 'Alt+O'),
   _NavItem(Routes.productivity, 'Produtividade', Icons.local_shipping, SingleActivator(LogicalKeyboardKey.f3), 'F3'),
   _NavItem(Routes.products, 'Produtos', Icons.inventory_2_outlined, SingleActivator(LogicalKeyboardKey.keyP, alt: true), 'Alt+P'),
   _NavItem(Routes.partners, 'Clientes e fornecedores', Icons.contacts_outlined,
@@ -28,6 +30,7 @@ const _allItems = [
       SingleActivator(LogicalKeyboardKey.keyF, alt: true), 'Alt+F'),
   _NavItem(Routes.purchases, 'Compras (NF-e)', Icons.receipt_long_outlined,
       SingleActivator(LogicalKeyboardKey.keyN, alt: true), 'Alt+N'),
+  _NavItem(Routes.users, 'Usuários', Icons.manage_accounts_outlined, SingleActivator(LogicalKeyboardKey.keyU, alt: true), 'Alt+U'),
   _NavItem(Routes.company, 'Empresa', Icons.business, SingleActivator(LogicalKeyboardKey.f4), 'F4'),
   _NavItem(Routes.masterAdmin, 'Master', Icons.admin_panel_settings, SingleActivator(LogicalKeyboardKey.f6), 'F6'),
   _NavItem(Routes.about, 'Sobre / Ajuda', Icons.help_outline, SingleActivator(LogicalKeyboardKey.f1), 'F1'),
@@ -78,10 +81,20 @@ class AppShell extends ConsumerWidget {
               label: Text('Licença: ${session.licenseDaysLeft} dia(s)'),
             ),
           ),
-        IconButton(
-          tooltip: 'Sair',
-          icon: const Icon(Icons.logout),
-          onPressed: () => ref.read(sessionControllerProvider.notifier).logout(),
+        PopupMenuButton<String>(
+          tooltip: 'Minha conta',
+          icon: const Icon(Icons.account_circle_outlined),
+          onSelected: (v) {
+            if (v == 'pw') {
+              showChangePasswordDialog(context);
+            } else {
+              ref.read(sessionControllerProvider.notifier).logout();
+            }
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'pw', child: ListTile(leading: Icon(Icons.lock_reset), title: Text('Trocar minha senha'))),
+            PopupMenuItem(value: 'out', child: ListTile(leading: Icon(Icons.logout), title: Text('Sair'))),
+          ],
         ),
       ],
     );

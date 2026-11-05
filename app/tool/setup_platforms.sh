@@ -17,6 +17,15 @@ if ! grep -q 'android.permission.CAMERA' "$MANIFEST"; then
   sed -i.bak 's/android:label="iahope_gestao"/android:label="IaHope Gestão"/' "$MANIFEST"
   rm -f "$MANIFEST.bak"
 fi
+# abrir links (WhatsApp) no Android 11+: declara o intent https
+if ! grep -q 'android:scheme="https"' "$MANIFEST"; then
+  if grep -q '<queries>' "$MANIFEST"; then
+    sed -i.bak 's#<queries>#<queries>\n        <intent>\n            <action android:name="android.intent.action.VIEW"/>\n            <data android:scheme="https"/>\n        </intent>#' "$MANIFEST"
+  else
+    sed -i.bak 's#</manifest>#    <queries>\n        <intent>\n            <action android:name="android.intent.action.VIEW"/>\n            <data android:scheme="https"/>\n        </intent>\n    </queries>\n</manifest>#' "$MANIFEST"
+  fi
+  rm -f "$MANIFEST.bak"
+fi
 
 # Android 7.0+ (SDK 24): exigido pelo leitor de código por câmera (mobile_scanner 7)
 for G in android/app/build.gradle.kts android/app/build.gradle; do

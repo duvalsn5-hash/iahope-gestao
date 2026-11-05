@@ -11,6 +11,7 @@ class Product {
     this.minStock = 0,
     this.scaleCode,
     this.isActive = true,
+    this.imageUrl,
   });
 
   final String id;
@@ -26,6 +27,9 @@ class Product {
   /// Código do produto na etiqueta da balança (módulo BALANCA).
   final int? scaleCode;
   final bool isActive;
+
+  /// Foto do produto (URL pública, muda a cada troca).
+  final String? imageUrl;
 
   bool get lowStock => stockQty <= minStock;
 
@@ -44,6 +48,7 @@ class Product {
         minStock: (j['minStock'] as num? ?? 0).toDouble(),
         scaleCode: (j['scaleCode'] as num?)?.toInt(),
         isActive: j['isActive'] as bool? ?? true,
+        imageUrl: j['imageUrl'] as String?,
       );
 }
 

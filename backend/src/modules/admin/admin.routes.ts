@@ -27,6 +27,7 @@ const mapTenant = (t: any) => ({
   usersCount: Number(t.users_count ?? 0),
   isPlatform: t.is_platform,
   modules: t.modules ?? [],
+  adminUsername: t.admin_username ?? null,
   createdAt: t.created_at,
 });
 
@@ -37,7 +38,9 @@ adminRouter.get('/tenants', async (req, res) => {
   const rows = await db(req, async (c) =>
     (
       await c.query(
-        `SELECT t.*, (SELECT count(*) FROM app.users u WHERE u.tenant_id = t.id) AS users_count
+        `SELECT t.*, (SELECT count(*) FROM app.users u WHERE u.tenant_id = t.id) AS users_count,
+                (SELECT u.username::text FROM app.users u WHERE u.tenant_id = t.id AND u.role = 'ADMIN'
+                  ORDER BY u.created_at LIMIT 1) AS admin_username
            FROM app.tenants t
           WHERE ($1 = '' OR t.cnpj LIKE '%' || regexp_replace($1, '\\D', '', 'g') || '%'
                  OR t.razao_social ILIKE '%' || $1 || '%' OR t.nome_fantasia ILIKE '%' || $1 || '%')

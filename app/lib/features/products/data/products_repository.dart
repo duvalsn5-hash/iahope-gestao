@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -43,6 +45,17 @@ class ProductsRepository {
         final r = await _dio.put('/products/$id', data: p.toJson(includeStock: false));
         return Product.fromJson(r.data as Map<String, dynamic>);
       });
+
+  /// Envia a foto já reduzida (JPEG). Retorna a URL pública.
+  Future<String> uploadImage(String id, Uint8List jpeg) => apiCall(() async {
+        final form = FormData.fromMap({
+          'image': MultipartFile.fromBytes(jpeg, filename: 'produto.jpg', contentType: DioMediaType('image', 'jpeg')),
+        });
+        final r = await _dio.post('/products/$id/image', data: form);
+        return r.data['imageUrl'] as String;
+      });
+
+  Future<void> removeImage(String id) => apiCall(() => _dio.delete('/products/$id/image'));
 
   /// qty positivo = entrada; negativo = baixa. reason: ENTRADA | AJUSTE
   Future<Product> adjustStock(String id, double qty, String reason) => apiCall(() async {

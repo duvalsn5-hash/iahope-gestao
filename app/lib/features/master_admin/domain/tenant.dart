@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 enum TenantStatus { ativo, bloqueado }
 
 class Tenant {
@@ -14,6 +16,7 @@ class Tenant {
     required this.usersCount,
     required this.isPlatform,
     this.modules = const [],
+    this.adminUsername,
   });
 
   final String id;
@@ -28,6 +31,7 @@ class Tenant {
   final int usersCount;
   final bool isPlatform;
   final List<String> modules;
+  final String? adminUsername;
 
   String get displayName => (nomeFantasia?.isNotEmpty ?? false) ? nomeFantasia! : razaoSocial;
   bool get isBlocked => status == TenantStatus.bloqueado;
@@ -52,6 +56,7 @@ class Tenant {
         usersCount: (j['usersCount'] as num? ?? 0).toInt(),
         isPlatform: j['isPlatform'] as bool? ?? false,
         modules: [for (final m in (j['modules'] as List? ?? const [])) m.toString()],
+        adminUsername: j['adminUsername'] as String?,
       );
 }
 
@@ -78,6 +83,7 @@ class NewTenantInput {
     required this.adminUsername,
     required this.adminFullName,
     required this.adminPassword,
+    this.modules,
   });
 
   final String cnpj, razaoSocial;
@@ -85,6 +91,7 @@ class NewTenantInput {
   final DateTime licenseExpiresAt;
   final int maxUsers;
   final String adminUsername, adminFullName, adminPassword;
+  final List<String>? modules;
 
   Map<String, dynamic> toJson() => {
         'cnpj': cnpj,
@@ -92,6 +99,7 @@ class NewTenantInput {
         if (nomeFantasia != null && nomeFantasia!.isNotEmpty) 'nomeFantasia': nomeFantasia,
         'licenseExpiresAt': licenseExpiresAt.toIso8601String().substring(0, 10),
         'maxUsers': maxUsers,
+        if (modules != null) 'modules': modules,
         'admin': {'username': adminUsername, 'fullName': adminFullName, 'password': adminPassword},
       };
 }
@@ -103,4 +111,13 @@ const kModules = [
   ('FINANCEIRO', 'Financeiro', 'Contas a pagar e a receber, venda a prazo'),
   ('COMPRAS', 'Compras por XML', 'Entrada de NF-e com estoque, custo e duplicatas'),
   ('BALANCA', 'Balança', 'Leitura de etiqueta de balança no PDV'),
+  ('OFICINA', 'Oficina de motos', 'Ordens de serviço, motos, mão de obra, comissões e revisões'),
+];
+
+/// Planos prontos: um toque marca os módulos certos para cada tipo de negócio.
+const kPlans = [
+  ('Oficina de moto', Icons.two_wheeler, ['PDV', 'FINANCEIRO', 'COMPRAS', 'OFICINA']),
+  ('Mercadinho', Icons.storefront, ['PDV', 'FINANCEIRO', 'COMPRAS', 'BALANCA']),
+  ('Loja / PDV simples', Icons.point_of_sale, ['PDV', 'FINANCEIRO']),
+  ('Distribuidora / logística', Icons.local_shipping, ['PDV', 'FINANCEIRO', 'COMPRAS', 'PRODUTIVIDADE']),
 ];

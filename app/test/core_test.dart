@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iahope_gestao/core/utils/formatters.dart';
 import 'package:iahope_gestao/features/pos/domain/pos_models.dart';
 import 'package:iahope_gestao/features/products/domain/product.dart';
+import 'package:iahope_gestao/features/workshop/domain/workshop.dart';
 
 void main() {
   group('CNPJ', () {
@@ -25,5 +26,18 @@ void main() {
     const s = PosState(items: [CartItem(product: p, qty: 3)], discount: 1.7);
     expect(s.subtotal, 14.7);
     expect(s.total, 13.0);
+  });
+
+  test('OS: peças + mão de obra − desconto e fluxo de andamento', () {
+    final items = [
+      OsItem(kind: 'PECA', productId: 'p', description: 'Óleo', qty: 2, unitPrice: 38, stockQty: 1),
+      OsItem(kind: 'SERVICO', description: 'Troca de óleo', qty: 1, unitPrice: 25),
+    ];
+    expect(items.first.missingStock, isTrue);
+    final partsTotal = items.where((i) => i.isPart).fold<double>(0, (a, i) => a + i.total);
+    expect(partsTotal, 76);
+    expect(OsStatus.aberta.next, OsStatus.orcamento);
+    expect(OsStatus.pronta.next, isNull);
+    expect(osStatusFromApi('EM_EXECUCAO'), OsStatus.emExecucao);
   });
 }

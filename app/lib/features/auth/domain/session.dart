@@ -1,10 +1,11 @@
-enum UserRole { superAdmin, admin, gerente, operador, caixa }
+enum UserRole { superAdmin, admin, gerente, operador, caixa, mecanico }
 
 UserRole roleFromApi(String v) => switch (v) {
       'SUPER_ADMIN' => UserRole.superAdmin,
       'ADMIN' => UserRole.admin,
       'GERENTE' => UserRole.gerente,
       'CAIXA' => UserRole.caixa,
+      'MECANICO' => UserRole.mecanico,
       _ => UserRole.operador,
     };
 
@@ -14,6 +15,7 @@ String roleToApi(UserRole r) => switch (r) {
       UserRole.gerente => 'GERENTE',
       UserRole.caixa => 'CAIXA',
       UserRole.operador => 'OPERADOR',
+      UserRole.mecanico => 'MECANICO',
     };
 
 String roleLabel(UserRole r) => switch (r) {
@@ -22,6 +24,7 @@ String roleLabel(UserRole r) => switch (r) {
       UserRole.gerente => 'Gerente',
       UserRole.caixa => 'Caixa',
       UserRole.operador => 'Operador',
+      UserRole.mecanico => 'Mecânico',
     };
 
 /// Dados de marca exibidos na tela de login (antes de autenticar).
@@ -137,6 +140,9 @@ class Session {
   bool get canUsePurchases => hasModule('COMPRAS') && isManager;
   bool get canEditProducts => isManager;
   bool get canSeePartners => const {UserRole.admin, UserRole.gerente, UserRole.caixa}.contains(user.role);
+  bool get canUseWorkshop => hasModule('OFICINA') && !isSuperAdmin;
+  bool get canCloseWorkOrder => canUseWorkshop && const {UserRole.admin, UserRole.gerente, UserRole.caixa}.contains(user.role);
+  bool get canManageUsers => user.role == UserRole.admin;
 
   /// Dias até vencer a licença (null para tenant sem data).
   int? get licenseDaysLeft {

@@ -59,17 +59,18 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
   Future<void> _edit([Product? p]) async {
     if (!_canEdit) return;
-    final input = await showDialog<ProductInput>(
+    final result = await showDialog<ProductFormResult>(
       context: context,
       builder: (_) => ProductFormDialog(initial: p, showScale: _scaleOn),
     );
-    if (input == null || !mounted) return;
+    if (result == null || !mounted) return;
     try {
       final repo = ref.read(productsRepositoryProvider);
-      if (p == null) {
-        await repo.create(input);
-      } else {
-        await repo.update(p.id, input);
+      final saved = p == null ? await repo.create(result.input) : await repo.update(p.id, result.input);
+      if (result.newPhoto != null) {
+        await repo.uploadImage(saved.id, result.newPhoto!);
+      } else if (result.removePhoto) {
+        await repo.removeImage(saved.id);
       }
       ref.invalidate(productListProvider);
       if (mounted) showOk(context, p == null ? 'Produto cadastrado' : 'Produto atualizado');
@@ -205,6 +206,7 @@ class _ProductTable extends StatelessWidget {
                 onSelectChanged: canEdit ? (_) => onEdit(p) : null,
                 cells: [
                   DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                    Padding(padding: const EdgeInsets.only(right: 10), child: ProductThumb(url: p.imageUrl, size: 36)),
                     if (!p.isActive)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
@@ -246,6 +248,7 @@ class _ProductCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         onTap: onTap,
+        leading: ProductThumb(url: p.imageUrl, size: 44),
         title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Row(children: [
           Text('${p.sku} · ${money(p.price)} · '),

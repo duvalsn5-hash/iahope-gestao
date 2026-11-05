@@ -583,6 +583,7 @@ class _ChoicesList extends StatelessWidget {
               return ListTile(
                 selected: i == highlighted,
                 selectedTileColor: t.colorScheme.primaryContainer,
+                leading: ProductThumb(url: p.imageUrl, size: 44),
                 title: Text(p.name),
                 subtitle: Text('SKU ${p.sku}${p.barcode != null ? ' · ${p.barcode}' : ''} · estoque ${number(p.stockQty)} ${p.unit}'),
                 trailing: Text(money(p.price), style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -633,7 +634,9 @@ class _CartList extends StatelessWidget {
           return ListTile(
             selected: state.selected == i,
             selectedTileColor: t.colorScheme.secondaryContainer.withValues(alpha: .5),
-            leading: CircleAvatar(radius: 14, child: Text('${i + 1}', style: const TextStyle(fontSize: 12))),
+            leading: it.product.imageUrl != null
+                ? ProductThumb(url: it.product.imageUrl, size: 40)
+                : CircleAvatar(radius: 14, child: Text('${i + 1}', style: const TextStyle(fontSize: 12))),
             title: Text(it.product.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(
               '${number(it.qty)} ${it.product.unit} × ${money(it.product.price)}'

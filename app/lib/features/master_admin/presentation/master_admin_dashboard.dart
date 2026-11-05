@@ -5,10 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/whatsapp.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../users/presentation/change_password_dialog.dart';
 import '../domain/tenant.dart';
 import 'admin_controller.dart';
 import 'create_tenant_dialog.dart';
+import 'master_guide.dart';
 
 /// Painel do Administrador Master (SUPER_ADMIN): todas as empresas, status,
 /// vencimento da licença, bloqueio/desbloqueio, renovação e novos clientes.
@@ -105,6 +108,15 @@ class _MasterAdminDashboardState extends ConsumerState<MasterAdminDashboard> {
     }
   }
 
+  Future<void> _sendAccess(Tenant t) async {
+    final msg = welcomeMessage(t, adminUsername: t.adminUsername);
+    final ok = await openWhatsApp(null, msg);
+    if (!ok) {
+      await Clipboard.setData(ClipboardData(text: msg));
+      if (mounted) showOk(context, 'Mensagem copiada — cole no WhatsApp ou e-mail do cliente');
+    }
+  }
+
   Future<void> _renew(Tenant t) async {
     final base = t.isExpired ? DateTime.now() : t.licenseExpiresAt;
     final picked = await showDatePicker(
@@ -163,6 +175,13 @@ class _MasterAdminDashboardState extends ConsumerState<MasterAdminDashboard> {
                 KpiCard(label: 'Vence em 7 dias', value: '${stats.vencendo7d}', icon: Icons.schedule, color: Colors.amber.shade800),
               ]),
               const SizedBox(height: 16),
+              MasterGuideCard(
+                stats: stats,
+                onNewClient: _newTenant,
+                onChangePassword: () => showChangePasswordDialog(context),
+                onOpenHelp: () => showMasterHelp(context),
+              ),
+              const SizedBox(height: 16),
               Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                 SizedBox(
                   width: compact ? double.infinity : 360,
@@ -190,8 +209,8 @@ class _MasterAdminDashboardState extends ConsumerState<MasterAdminDashboard> {
                 data: (list) => list.isEmpty
                     ? const Padding(padding: EdgeInsets.all(48), child: Center(child: Text('Nenhuma empresa encontrada')))
                     : compact
-                        ? Column(children: [for (final t in list) _TenantCard(t: t, onToggle: _toggle, onRenew: _renew, onModules: _modules)])
-                        : _TenantTable(list: list, onToggle: _toggle, onRenew: _renew, onModules: _modules),
+                        ? Column(children: [for (final t in list) _TenantCard(t: t, onToggle: _toggle, onRenew: _renew, onModules: _modules, onAccess: _sendAccess)])
+                        : _TenantTable(list: list, onToggle: _toggle, onRenew: _renew, onModules: _modules, onAccess: _sendAccess),
               ),
             ],
           ),
@@ -228,11 +247,12 @@ String _licenseText(Tenant t) {
 }
 
 class _TenantTable extends StatelessWidget {
-  const _TenantTable({required this.list, required this.onToggle, required this.onRenew, required this.onModules});
+  const _TenantTable({required this.list, required this.onToggle, required this.onRenew, required this.onModules, required this.onAccess});
   final List<Tenant> list;
   final void Function(Tenant) onToggle;
   final void Function(Tenant) onRenew;
   final void Function(Tenant) onModules;
+  final void Function(Tenant) onAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -277,6 +297,11 @@ class _TenantTable extends StatelessWidget {
                           label: const Text('Renovar'),
                         ),
                         TextButton.icon(
+                          onPressed: () => onAccess(t),
+                          icon: const Icon(Icons.send_to_mobile),
+                          label: const Text('Enviar acesso'),
+                        ),
+                        TextButton.icon(
                           onPressed: () => onModules(t),
                           icon: const Icon(Icons.extension_outlined),
                           label: Text('Módulos (${t.modules.length})'),
@@ -291,11 +316,12 @@ class _TenantTable extends StatelessWidget {
 }
 
 class _TenantCard extends StatelessWidget {
-  const _TenantCard({required this.t, required this.onToggle, required this.onRenew, required this.onModules});
+  const _TenantCard({required this.t, required this.onToggle, required this.onRenew, required this.onModules, required this.onAccess});
   final Tenant t;
   final void Function(Tenant) onToggle;
   final void Function(Tenant) onRenew;
   final void Function(Tenant) onModules;
+  final void Function(Tenant) onAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -320,6 +346,7 @@ class _TenantCard extends StatelessWidget {
           if (t.isBlocked && (t.blockedReason?.isNotEmpty ?? false)) Text('Motivo: ${t.blockedReason}'),
           if (!t.isPlatform)
             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              IconButton(tooltip: 'Enviar acesso', onPressed: () => onAccess(t), icon: const Icon(Icons.send_to_mobile)),
               TextButton(onPressed: () => onModules(t), child: Text('Módulos (${t.modules.length})')),
               TextButton(onPressed: () => onRenew(t), child: const Text('Renovar')),
               FilledButton.tonal(onPressed: () => onToggle(t), child: Text(t.isBlocked ? 'Ativar' : 'Bloquear')),
@@ -353,8 +380,14 @@ class _ModulesDialogState extends State<_ModulesDialog> {
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.verified_outlined),
             title: Text('Sempre incluídos'),
-            subtitle: Text('Produtos e estoque, clientes e fornecedores, empresa e logo'),
+            subtitle: Text('Produtos (com foto) e estoque, clientes e fornecedores, usuários, empresa e logo'),
           ),
+          Align(alignment: Alignment.centerLeft, child: Text('Modelos prontos', style: Theme.of(context).textTheme.labelLarge)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final p in kPlans)
+              ActionChip(avatar: Icon(p.$2, size: 18), label: Text(p.$1), onPressed: () => setState(() => _sel..clear()..addAll(p.$3))),
+          ]),
           const Divider(),
           for (final m in kModules)
             CheckboxListTile(

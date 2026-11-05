@@ -21,6 +21,8 @@ dependencies:
   mobile_scanner: ^7.5.0        # câmera como leitor no Android
   pdf: ^3.11.1                  # cupom 80mm com logo
   printing: ^5.13.4             # impressão/compartilhamento do cupom
+  image: ^4.3.0                 # reduz a foto do produto antes de enviar
+  url_launcher: ^6.3.0          # abrir WhatsApp com orçamento/lembrete
 
 dev_dependencies:
   flutter_test:

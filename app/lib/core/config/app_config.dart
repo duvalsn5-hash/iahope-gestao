@@ -15,6 +15,11 @@ class AppConfig {
 
   static const String appName = 'IaHope Gestão';
 
+  /// Endereços que o Master envia ao cliente na mensagem de boas-vindas.
+  static const String webAppUrl = String.fromEnvironment('WEB_URL', defaultValue: 'https://duvalsn5-hash.github.io/iahope-gestao/');
+  static const String downloadsUrl =
+      String.fromEnvironment('DOWNLOADS_URL', defaultValue: 'https://github.com/duvalsn5-hash/iahope-gestao/releases/latest');
+
   /// Crédito obrigatório (login, sobre e rodapé principal).
   static const String credits = 'Desenvolvido por Edivaldo.Nascimento - IaHope-Technology';
 

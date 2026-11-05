@@ -46,6 +46,38 @@ class CompanyLogo extends StatelessWidget {
   }
 }
 
+/// Miniatura da foto do produto (ícone quando não há foto).
+class ProductThumb extends StatelessWidget {
+  const ProductThumb({super.key, required this.url, this.size = 40, this.icon = Icons.inventory_2_outlined});
+  final String? url;
+  final double size;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fallback = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(8)),
+      child: Icon(icon, size: size * .5, color: scheme.outline),
+    );
+    if (url == null || url!.isEmpty) return fallback;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        url!,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        cacheWidth: (size * 3).round(),
+        errorBuilder: (_, __, ___) => fallback,
+        loadingBuilder: (c, child, p) => p == null ? child : SizedBox(width: size, height: size),
+      ),
+    );
+  }
+}
+
 /// Crédito obrigatório em login, sobre e rodapé.
 class CreditsFooter extends StatelessWidget {
   const CreditsFooter({super.key, this.dense = false});

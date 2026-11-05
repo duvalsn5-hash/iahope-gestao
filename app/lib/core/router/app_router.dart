@@ -14,6 +14,8 @@ import '../../features/pos/presentation/pos_screen.dart';
 import '../../features/productivity/presentation/productivity_dashboard.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/purchases/presentation/purchases_screen.dart';
+import '../../features/users/presentation/users_screen.dart';
+import '../../features/workshop/presentation/workshop_screen.dart';
 import '../widgets/app_shell.dart';
 
 class Routes {
@@ -25,6 +27,8 @@ class Routes {
   static const partners = '/clientes-fornecedores';
   static const finance = '/financeiro';
   static const purchases = '/compras';
+  static const workshop = '/oficina';
+  static const users = '/usuarios';
   static const company = '/empresa';
   static const about = '/sobre';
 }
@@ -33,7 +37,9 @@ class Routes {
 String homeFor(Session s) {
   if (s.isSuperAdmin) return Routes.masterAdmin;
   if (s.user.role == UserRole.caixa && s.canSell) return Routes.pos;
+  if (s.user.role == UserRole.mecanico && s.canUseWorkshop) return Routes.workshop;
   if (s.user.role == UserRole.operador && s.canSeeProductivity) return Routes.productivity;
+  if (s.canUseWorkshop && !s.canSell) return Routes.workshop;
   if (s.canSell) return Routes.pos;
   if (s.canSeeProductivity) return Routes.productivity;
   return Routes.products;
@@ -47,7 +53,9 @@ bool canAccess(Session s, String path) => switch (path) {
       Routes.finance => s.canUseFinance,
       Routes.purchases => s.canUsePurchases,
       Routes.partners => s.canSeePartners,
-      Routes.products => !s.isSuperAdmin,
+      Routes.products => !s.isSuperAdmin && s.user.role != UserRole.mecanico,
+      Routes.workshop => s.canUseWorkshop,
+      Routes.users => s.canManageUsers,
       Routes.company => s.canManageCompany,
       _ => true,
     };
@@ -83,6 +91,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           page(Routes.partners, const PartnersScreen()),
           page(Routes.finance, const FinanceScreen()),
           page(Routes.purchases, const PurchasesScreen()),
+          page(Routes.workshop, const WorkshopScreen()),
+          page(Routes.users, const UsersScreen()),
           page(Routes.company, const CompanySettingsScreen()),
           page(Routes.about, const AboutScreen()),
         ],

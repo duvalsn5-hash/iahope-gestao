@@ -20,6 +20,7 @@ class AboutScreen extends ConsumerWidget {
       ('F1', 'Sobre / Ajuda'),
       ('F2', 'PDV (no PDV: foco na busca)'),
       ('F3', 'Produtividade (no PDV: identificar cliente)'),
+      ('Alt+O / Alt+U', 'Oficina / Usuários'),
       ('Alt+P / Alt+C', 'Produtos / Clientes e fornecedores'),
       ('Alt+F / Alt+N', 'Financeiro / Compras (NF-e)'),
       ('F4', 'Empresa'),

@@ -1,8 +1,23 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/image_tools.dart';
+import '../../../core/widgets/common_widgets.dart';
 import '../domain/product.dart';
+
+/// O que o formulário devolve: os dados + o que fazer com a foto.
+class ProductFormResult {
+  const ProductFormResult(this.input, {this.newPhoto, this.removePhoto = false});
+  final ProductInput input;
+
+  /// JPEG já reduzido para enviar.
+  final Uint8List? newPhoto;
+  final bool removePhoto;
+}
 
 const kUnits = ['UN', 'KG', 'G', 'L', 'ML', 'M', 'CX', 'PC', 'PCT', 'RL', 'FD', 'DZ'];
 
@@ -31,6 +46,29 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late final _scale = TextEditingController(text: widget.initial?.scaleCode?.toString() ?? '');
   late String _unit = widget.initial?.unit ?? 'UN';
   late bool _active = widget.initial?.isActive ?? true;
+  Uint8List? _photo; // nova foto escolhida (já reduzida)
+  bool _removePhoto = false;
+  bool _processing = false;
+
+  Future<void> _pickPhoto() async {
+    final file = await FilePicker.pickFile(type: FileType.image);
+    if (file == null) return;
+    setState(() => _processing = true);
+    try {
+      final small = await shrinkImage(await file.readAsBytes());
+      if (!mounted) return;
+      if (small == null) {
+        showError(context, 'Não consegui abrir esta imagem. Use JPG ou PNG.');
+        return;
+      }
+      setState(() {
+        _photo = small;
+        _removePhoto = false;
+      });
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+  }
 
   bool get _isNew => widget.initial == null;
 
@@ -52,7 +90,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     if (!_form.currentState!.validate()) return;
     Navigator.pop(
       context,
-      ProductInput(
+      ProductFormResult(
+        ProductInput(
         sku: _sku.text.trim(),
         barcode: _barcode.text.trim(),
         name: _name.text.trim(),
@@ -63,6 +102,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         minStock: parseMoney(_min.text),
         scaleCode: int.tryParse(_scale.text.trim()),
         isActive: _active,
+      ),
+        newPhoto: _photo,
+        removePhoto: _removePhoto,
       ),
     );
   }
@@ -81,6 +123,17 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           key: _form,
           child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _PhotoField(
+                photo: _photo,
+                url: _removePhoto ? null : widget.initial?.imageUrl,
+                processing: _processing,
+                onPick: _pickPhoto,
+                onRemove: () => setState(() {
+                  _photo = null;
+                  _removePhoto = widget.initial?.imageUrl != null;
+                }),
+              ),
+              gap,
               TextFormField(
                 controller: _name,
                 autofocus: true,
@@ -186,5 +239,48 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         FilledButton(onPressed: _save, child: const Text('Salvar')),
       ],
     );
+  }
+}
+
+/// Área da foto: mostra a atual (ou a nova) e os botões trocar/remover.
+class _PhotoField extends StatelessWidget {
+  const _PhotoField({required this.photo, required this.url, required this.processing, required this.onPick, required this.onRemove});
+  final Uint8List? photo;
+  final String? url;
+  final bool processing;
+  final VoidCallback onPick, onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final has = photo != null || url != null;
+    Widget preview;
+    if (processing) {
+      preview = const SizedBox(width: 96, height: 96, child: Center(child: CircularProgressIndicator()));
+    } else if (photo != null) {
+      preview = ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.memory(photo!, width: 96, height: 96, fit: BoxFit.cover));
+    } else {
+      preview = ProductThumb(url: url, size: 96, icon: Icons.add_a_photo_outlined);
+    }
+    return Row(children: [
+      InkWell(onTap: processing ? null : onPick, borderRadius: BorderRadius.circular(12), child: preview),
+      const SizedBox(width: 16),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Foto do produto', style: t.textTheme.titleSmall),
+          Text('Aparece no PDV, no cadastro e na OS. JPG ou PNG; o app reduz o tamanho sozinho.',
+              style: t.textTheme.bodySmall),
+          const SizedBox(height: 6),
+          Wrap(spacing: 8, children: [
+            OutlinedButton.icon(
+              onPressed: processing ? null : onPick,
+              icon: const Icon(Icons.photo_library_outlined, size: 18),
+              label: Text(has ? 'Trocar foto' : 'Escolher foto'),
+            ),
+            if (has) TextButton(onPressed: onRemove, child: const Text('Remover')),
+          ]),
+        ]),
+      ),
+    ]);
   }
 }

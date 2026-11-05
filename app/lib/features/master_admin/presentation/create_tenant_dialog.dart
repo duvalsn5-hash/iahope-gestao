@@ -21,6 +21,7 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
   final _adminName = TextEditingController();
   final _adminPass = TextEditingController();
   DateTime _expires = DateTime.now().add(const Duration(days: 30));
+  Set<String> _modules = {...kPlans.first.$3};
 
   @override
   void dispose() {
@@ -43,6 +44,7 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
         adminUsername: _adminUser.text.trim(),
         adminFullName: _adminName.text.trim(),
         adminPassword: _adminPass.text,
+        modules: [for (final m in kModules) if (_modules.contains(m.$1)) m.$1],
       ),
     );
   }
@@ -101,6 +103,34 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
                     validator: (v) => (int.tryParse(v ?? '') ?? 0) > 0 ? null : 'Inválido',
                   ),
                 ),
+              ]),
+              const Divider(height: 32),
+              Align(alignment: Alignment.centerLeft, child: Text('Tipo de negócio (plano)', style: Theme.of(context).textTheme.titleSmall)),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Escolha um modelo; dá para ajustar os módulos abaixo e mudar depois.',
+                    style: Theme.of(context).textTheme.bodySmall),
+              ),
+              const SizedBox(height: 8),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final p in kPlans)
+                  ChoiceChip(
+                    avatar: Icon(p.$2, size: 18),
+                    label: Text(p.$1),
+                    selected: _modules.length == p.$3.length && _modules.containsAll(p.$3),
+                    onSelected: (_) => setState(() => _modules = {...p.$3}),
+                  ),
+              ]),
+              const SizedBox(height: 8),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final m in kModules)
+                  FilterChip(
+                    label: Text(m.$2),
+                    tooltip: m.$3,
+                    selected: _modules.contains(m.$1),
+                    onSelected: (v) => setState(() => v ? _modules.add(m.$1) : _modules.remove(m.$1)),
+                  ),
               ]),
               const Divider(height: 32),
               Align(alignment: Alignment.centerLeft, child: Text('Administrador da empresa', style: Theme.of(context).textTheme.titleSmall)),
