@@ -283,6 +283,76 @@ DO $$ BEGIN
 END $$;
 ROLLBACK;
 
+-- ================================================================ OFICINA
+-- ---------------------------------------------------------------- 11. OS completa
+BEGIN;
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ DECLARE cid uuid; vid uuid; os uuid; pid uuid; sid uuid; st0 numeric; sale uuid; v jsonb; BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  PERFORM set_config('app.user_id', (SELECT u.user_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  INSERT INTO app.partners (kind, doc, name, phone) VALUES ('CLIENTE', '52998224725', 'João Motoqueiro', '83999990000') RETURNING id INTO cid;
+  INSERT INTO app.vehicles (customer_id, plate, brand, model, year, km) VALUES (cid, 'QWE1A23', 'Honda', 'CG 160 Titan', 2022, 18000) RETURNING id INTO vid;
+  INSERT INTO app.products (sku, name, unit, price, stock_qty) VALUES ('OL-10W30', 'Óleo 10W30 1L', 'UN', 38, 10) RETURNING id INTO pid;
+  INSERT INTO app.service_catalog (name, price) VALUES ('Troca de óleo', 25) RETURNING id INTO sid;
+
+  os := app.open_work_order(cid, vid, 'Barulho no motor e troca de óleo', 18500, '1/2', '{"Retrovisores": true}', NULL, NULL);
+  ASSERT (SELECT number FROM app.work_orders WHERE id = os) = 1, 'numeração da OS';
+  ASSERT (SELECT km FROM app.vehicles WHERE id = vid) = 18500, 'km da moto não atualizou';
+  INSERT INTO app.work_order_items (work_order_id, kind, product_id, description, qty, unit_price, total)
+    VALUES (os, 'PECA', pid, 'Óleo 10W30 1L', 1, 38, 38);
+  INSERT INTO app.work_order_items (work_order_id, kind, service_id, description, qty, unit_price, total)
+    VALUES (os, 'SERVICO', sid, 'Troca de óleo', 1, 25, 25);
+  PERFORM app.set_work_order_status(os, 'ORCAMENTO', 'orçamento enviado');
+  PERFORM app.set_work_order_status(os, 'APROVADA', 'cliente aprovou por WhatsApp');
+  PERFORM app.set_work_order_status(os, 'PRONTA', NULL);
+  BEGIN
+    PERFORM app.set_work_order_status(os, 'ENTREGUE', NULL);
+    RAISE EXCEPTION 'FALHA: entregou sem passar pelo caixa';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  BEGIN
+    PERFORM app.close_work_order(os, '[{"method":"PIX","amount":63}]');
+    RAISE EXCEPTION 'FALHA: fechou OS sem caixa aberto';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+
+  PERFORM app.open_cash_session(0);
+  st0 := (SELECT stock_qty FROM app.products WHERE id = pid);
+  sale := app.close_work_order(os, '[{"method":"DINHEIRO","amount":70}]', 30, current_date + 180, 21500);
+  ASSERT (SELECT stock_qty FROM app.products WHERE id = pid) = st0 - 1, 'peça não baixou do estoque';
+  ASSERT (SELECT total FROM app.sales WHERE id = sale) = 63, 'total da OS errado';
+  ASSERT (SELECT change_due FROM app.sales WHERE id = sale) = 7, 'troco errado';
+  ASSERT (SELECT status FROM app.work_orders WHERE id = os) = 'ENTREGUE', 'OS não ficou entregue';
+  ASSERT (SELECT count(*) FROM app.sale_items WHERE sale_id = sale AND product_id IS NULL) = 1, 'serviço não entrou na venda';
+  v := app.cash_summary(app.current_cash_session());
+  ASSERT (v->>'expectedCash')::numeric = 63, format('caixa esperado %s', v->>'expectedCash');
+  -- cancelar a venda devolve só a peça e reabre a OS como PRONTA
+  PERFORM app.cancel_sale(sale);
+  ASSERT (SELECT stock_qty FROM app.products WHERE id = pid) = st0, 'cancelamento não devolveu a peça';
+  ASSERT (SELECT status FROM app.work_orders WHERE id = os) = 'PRONTA', 'OS não voltou para PRONTA';
+  ASSERT (SELECT count(*) FROM app.work_order_events WHERE work_order_id = os) >= 5, 'linha do tempo incompleta';
+  RAISE NOTICE 'OK 11: OS completa (abre, orça, aprova, fecha no caixa = R$ 63, troco 7, peça baixa; cancelamento devolve)';
+END $$;
+ROLLBACK;
+
+-- ---------------------------------------------------------------- 12. motos e fotos isoladas
+BEGIN;
+SELECT set_config('app.role', 'SUPER_ADMIN', true);
+SELECT set_config('app.tmp_b', (SELECT id::text FROM app.tenants WHERE cnpj = '45723174000110'), true);
+DO $$ DECLARE cid uuid; pid uuid; BEGIN
+  INSERT INTO app.partners (tenant_id, kind, name) VALUES (current_setting('app.tmp_b')::uuid, 'CLIENTE', 'Cliente da Outra') RETURNING id INTO cid;
+  INSERT INTO app.vehicles (tenant_id, customer_id, plate, model) VALUES (current_setting('app.tmp_b')::uuid, cid, 'SEG1R23', 'Moto secreta');
+  SELECT id INTO pid FROM app.products WHERE sku = 'SEGREDO-1';
+  INSERT INTO app.product_images (product_id, tenant_id, content_type, data) VALUES (pid, current_setting('app.tmp_b')::uuid, 'image/png', '\x89504e47');
+END $$;
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  ASSERT (SELECT count(*) FROM app.vehicles) = 0, 'vazou moto de outra empresa';
+  ASSERT (SELECT count(*) FROM app.product_images) = 0, 'vazou foto de outra empresa';
+  ASSERT (SELECT count(*) FROM app.work_orders) = 0, 'vazou OS de outra empresa';
+  RAISE NOTICE 'OK 12: motos, OS e fotos isoladas por empresa';
+END $$;
+ROLLBACK;
+
 -- limpeza
 BEGIN;
 SELECT set_config('app.role', 'SUPER_ADMIN', true);

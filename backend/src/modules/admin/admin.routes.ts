@@ -73,6 +73,8 @@ const createSchema = z.object({
   nomeFantasia: z.string().trim().optional(),
   licenseExpiresAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   maxUsers: z.number().int().positive().default(10),
+  // módulos contratados já na criação (plano). Sem isso, usa o padrão do banco.
+  modules: z.array(z.enum(ALL_MODULES as [string, ...string[]])).optional(),
   admin: z.object({
     username: z.string().trim().min(3),
     fullName: z.string().trim().min(3),
@@ -87,9 +89,9 @@ adminRouter.post('/tenants', async (req, res) => {
   const tenant = await db(req, async (c) => {
     const t = (
       await c.query(
-        `INSERT INTO app.tenants (cnpj, razao_social, nome_fantasia, license_expires_at, max_users)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [b.cnpj, b.razaoSocial, b.nomeFantasia ?? null, b.licenseExpiresAt, b.maxUsers],
+        `INSERT INTO app.tenants (cnpj, razao_social, nome_fantasia, license_expires_at, max_users, modules)
+         VALUES ($1, $2, $3, $4, $5, coalesce($6::text[], ARRAY['PDV','PRODUTIVIDADE','FINANCEIRO','COMPRAS']::text[])) RETURNING *`,
+        [b.cnpj, b.razaoSocial, b.nomeFantasia ?? null, b.licenseExpiresAt, b.maxUsers, b.modules ? [...new Set(b.modules)] : null],
       )
     ).rows[0];
     await c.query(

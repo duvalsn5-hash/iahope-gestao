@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { db, requireAuth, requireRole } from '../../middleware/auth';
 import { HttpError } from '../../middleware/errors';
 import { parseScaleBarcode, ScaleConfig } from '../../utils/scale';
+import { absoluteUrl } from '../auth/auth.routes';
 
 /** Cadastro de produtos (núcleo — disponível em todos os planos) */
 export const productsRouter = Router();
@@ -19,6 +21,7 @@ const map = (p: any) => ({
   stockQty: Number(p.stock_qty),
   minStock: Number(p.min_stock),
   scaleCode: p.scale_code ?? null,
+  imageUrl: absoluteUrl(p.image_url),
   isActive: p.is_active,
 });
 
@@ -140,6 +143,49 @@ productsRouter.post('/:id/stock', requireRole('ADMIN', 'GERENTE', 'OPERADOR'), a
     return r.rows[0];
   });
   res.json(map(p));
+});
+
+// ---------------------------------------------------------------- foto do produto
+const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
+
+function sniffImage(buf: Buffer): string | null {
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP') return 'image/webp';
+  return null;
+}
+
+/**
+ * POST /products/:id/image (multipart, campo "image", até 1 MB)
+ * O app já reduz a foto para ~600 px em JPEG antes de enviar (~40–80 KB).
+ */
+productsRouter.post('/:id/image', requireRole('ADMIN', 'GERENTE'), imageUpload.single('image'), async (req, res) => {
+  if (!req.file) throw new HttpError(400, 'SEM_ARQUIVO', 'Envie a foto no campo "image"');
+  const type = sniffImage(req.file.buffer);
+  if (!type) throw new HttpError(415, 'FORMATO', 'Use uma foto JPG, PNG ou WEBP');
+  const file = req.file;
+  const url = await db(req, async (c) => {
+    const p = (await c.query('SELECT id FROM app.products WHERE id = $1', [req.params.id])).rows[0];
+    if (!p) throw new HttpError(404, 'NAO_ENCONTRADO', 'Produto não encontrado');
+    await c.query(
+      `INSERT INTO app.product_images (product_id, content_type, data, updated_at) VALUES ($1, $2, $3, now())
+       ON CONFLICT (product_id) DO UPDATE SET content_type = EXCLUDED.content_type, data = EXCLUDED.data, updated_at = now()`,
+      [p.id, type, file.buffer],
+    );
+    const u = `/public/products/${p.id}/image?v=${Date.now()}`;
+    await c.query('UPDATE app.products SET image_url = $2 WHERE id = $1', [p.id, u]);
+    return u;
+  });
+  res.json({ imageUrl: absoluteUrl(url) });
+});
+
+/** DELETE /products/:id/image */
+productsRouter.delete('/:id/image', requireRole('ADMIN', 'GERENTE'), async (req, res) => {
+  await db(req, async (c) => {
+    await c.query('DELETE FROM app.product_images WHERE product_id = $1', [req.params.id]);
+    await c.query('UPDATE app.products SET image_url = NULL WHERE id = $1', [req.params.id]);
+  });
+  res.json({ imageUrl: null });
 });
 
 /** GET /products/:id/movements — histórico de estoque */

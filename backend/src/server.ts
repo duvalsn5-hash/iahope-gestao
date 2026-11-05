@@ -19,6 +19,8 @@ import { partnersRouter } from './modules/partners/partners.routes';
 import { cashRouter } from './modules/cash/cash.routes';
 import { financeRouter } from './modules/finance/finance.routes';
 import { purchasesRouter } from './modules/purchases/purchases.routes';
+import { usersRouter } from './modules/users/users.routes';
+import { workshopRouter } from './modules/workshop/workshop.routes';
 import { assertSafeDbRole } from './db/safety';
 
 export const app = express();
@@ -46,6 +48,8 @@ app.use('/partners', partnersRouter);
 app.use('/cash', cashRouter);
 app.use('/finance', financeRouter);
 app.use('/purchases', purchasesRouter);
+app.use('/users', usersRouter);
+app.use('/workshop', workshopRouter);
 
 app.use(errorHandler);
 

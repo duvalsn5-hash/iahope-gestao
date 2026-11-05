@@ -5,7 +5,7 @@ import { DbContext, publicQuery, withTenant } from '../db/pool';
 import { HttpError } from './errors';
 import { PoolClient } from 'pg';
 
-export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'GERENTE' | 'OPERADOR' | 'CAIXA';
+export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'GERENTE' | 'OPERADOR' | 'CAIXA' | 'MECANICO';
 
 export interface JwtPayload {
   sub: string;   // user id
@@ -15,8 +15,8 @@ export interface JwtPayload {
 }
 
 /** Módulos contratáveis (o Master liga/desliga por empresa). */
-export type Module = 'PDV' | 'PRODUTIVIDADE' | 'FINANCEIRO' | 'COMPRAS' | 'BALANCA';
-export const ALL_MODULES: Module[] = ['PDV', 'PRODUTIVIDADE', 'FINANCEIRO', 'COMPRAS', 'BALANCA'];
+export type Module = 'PDV' | 'PRODUTIVIDADE' | 'FINANCEIRO' | 'COMPRAS' | 'BALANCA' | 'OFICINA';
+export const ALL_MODULES: Module[] = ['PDV', 'PRODUTIVIDADE', 'FINANCEIRO', 'COMPRAS', 'BALANCA', 'OFICINA'];
 
 declare global {
   namespace Express {

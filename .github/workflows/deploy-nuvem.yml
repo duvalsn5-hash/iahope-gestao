@@ -136,15 +136,19 @@ jobs:
 
           q() { psql "$OWNER_URI" -v ON_ERROR_STOP=1 -Atq "$@"; }
           if [ "$(q -c "select to_regclass('app.tenants') is not null")" != "t" ]; then
-            echo "Banco vazio → criando tudo (00 → 03)"
+            echo "Banco vazio → criando tudo (00 → 04)"
             sed "s|TROQUE-Kq7#vR2m!Lp9xW4z|$APP_PW|" database/00_roles.sql | q -f -
             q -f database/01_schema.sql
             q -f database/02_seed.sql >/dev/null
             q -f database/03_fase1.sql
+            q -f database/04_oficina.sql
           else
             echo "Schema já existe."
             if [ "$(q -c "select to_regclass('app.partners') is not null")" != "t" ]; then
               echo "Aplicando Fase 1 (03_fase1.sql)"; q -f database/03_fase1.sql
+            fi
+            if [ "$(q -c "select to_regclass('app.work_orders') is not null")" != "t" ]; then
+              echo "Aplicando módulo Oficina (04_oficina.sql)"; q -f database/04_oficina.sql
             fi
           fi
 
