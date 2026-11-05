@@ -152,14 +152,29 @@ jobs:
             fi
           fi
 
-          # sempre gera senha nova para o app_api (e manda para o Render no próximo passo)
-          printf "ALTER ROLE app_api WITH PASSWORD :'pw';\n" | q -v pw="$APP_PW"
+          # Reaproveita a senha que a API já usa (lida do Render) se ela ainda funcionar:
+          # assim a API no ar não perde o acesso durante a atualização.
+          CUR=""
+          SID0=$(curl -sS -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services?name=$RENDER_SERVICE&limit=20" \
+                  | jq -r --arg n "$RENDER_SERVICE" '[.[] | .service | select(.name==$n)][0].id // empty' 2>/dev/null || true)
+          if [ -n "$SID0" ]; then
+            CUR=$(curl -sS -H "Authorization: Bearer $RENDER_API_KEY" "https://api.render.com/v1/services/$SID0/env-vars?limit=100" \
+                  | jq -r '[.[] | .envVar | select(.key=="DATABASE_URL")][0].value // empty' 2>/dev/null || true)
+            [ -n "$CUR" ] && echo "::add-mask::$CUR"
+          fi
+          if [ -n "$CUR" ] && psql "$CUR" -Atqc 'select 1' >/dev/null 2>&1; then
+            echo "Senha atual do app_api continua válida — mantida."
+            DBURL="$CUR"
+          else
+            printf "ALTER ROLE app_api WITH PASSWORD :'pw';\n" | q -v pw="$APP_PW"
+            DBURL="postgresql://app_api:${APP_PW}@${POOLER_HOST}/neondb?sslmode=require"
+            echo "Senha nova gerada para o app_api."
+          fi
 
           # senha do master e dos usuários de demonstração = MASTER_PASSWORD
           printf "UPDATE app.users SET password_hash = crypt(:'pw', gen_salt('bf', 10)) WHERE username IN ('master','admin','caixa1');\n" \
             | q -v pw="$MASTER_PASSWORD"
 
-          DBURL="postgresql://app_api:${APP_PW}@${POOLER_HOST}/neondb?sslmode=require"
           echo "::add-mask::$DBURL"
           echo "DATABASE_URL_APP=$DBURL" >> "$GITHUB_ENV"
 
@@ -206,6 +221,7 @@ jobs:
             }')
             RES=$(call POST "$API/services" "$BODY")
             SID=$(jq -r '.service.id // .id' <<<"$RES")
+            DID=$(jq -r '.deployId // empty' <<<"$RES")
           else
             echo "Atualizando serviço existente $SID…"
             put() { call PUT "$API/services/$SID/env-vars/$1" "$(jq -n --arg v "$2" '{value:$v}')" >/dev/null; }
@@ -213,7 +229,19 @@ jobs:
             put STORAGE_DRIVER db
             put DB_POOL_MAX 5
             put CORS_ORIGIN "$ORIGIN"
-            call POST "$API/services/$SID/deploys" '{}' >/dev/null
+            DID=$(call POST "$API/services/$SID/deploys" '{}' | jq -r '.id // empty')
+          fi
+
+          if [ -n "${DID:-}" ]; then
+            echo "Aguardando o Render publicar a nova versão ($DID)…"
+            for i in $(seq 1 80); do
+              ST=$(call GET "$API/services/$SID/deploys/$DID" | jq -r '.status')
+              case "$ST" in
+                live) echo "Nova versão no ar ✓"; break ;;
+                build_failed|update_failed|canceled|deactivated) echo "::error::Deploy no Render terminou como $ST — veja os logs no painel do Render"; exit 1 ;;
+              esac
+              sleep 15
+            done
           fi
 
           URL=$(call GET "$API/services/$SID" | jq -r '.serviceDetails.url')
