@@ -45,7 +45,7 @@ class AboutScreen extends ConsumerWidget {
               Icon(Icons.hub_outlined, size: 64, color: t.colorScheme.primary),
               const SizedBox(height: 8),
               Text(AppConfig.appName, textAlign: TextAlign.center, style: t.textTheme.headlineMedium),
-              Text('Gestão Operacional · Logística · PDV — v1.0.0', textAlign: TextAlign.center, style: t.textTheme.bodyMedium),
+              Text('Gestão Operacional · Logística · PDV — v1.1.0', textAlign: TextAlign.center, style: t.textTheme.bodyMedium),
               const SizedBox(height: 16),
               Card(
                 color: t.colorScheme.primaryContainer,

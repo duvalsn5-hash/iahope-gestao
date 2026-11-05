@@ -77,7 +77,8 @@ gestao-iahope/
 │   ├── 01_schema.sql        # DDL completo, RLS, funções, triggers, permissões
 │   ├── 02_seed.sql          # Super Admin + empresa demo + produtos
 │   ├── 03_fase1.sql         # módulos, clientes/fornecedores, caixa, financeiro, compras XML, balança
-│   └── 99_rls_tests.sql     # 13 testes de isolamento (rodar como app_api, em banco de teste)
+│   ├── 04_oficina.sql       # oficina de moto (motos, OS, mão de obra, comissões), mecânico, fotos de produto
+│   └── 99_rls_tests.sql     # 19 testes de isolamento (rodar como app_api, em banco de teste)
 ├── docs/                    # DEPLOY_GRATIS.md · MIGRAR_PARA_HOSTING.md
 ├── deploy/vps/              # produção em VPS: Caddy (HTTPS) + API + Postgres
 ├── render.yaml              # API no Render (plano Free) em 1 clique
@@ -139,6 +140,7 @@ psql -U postgres -d gestao -f database/00_roles.sql   # troque a senha antes
 psql -U postgres -d gestao -f database/01_schema.sql
 psql -U postgres -d gestao -f database/02_seed.sql
 psql -U postgres -d gestao -f database/03_fase1.sql
+psql -U postgres -d gestao -f database/04_oficina.sql
 # testes de isolamento — SÓ em banco de teste (devem terminar em "Todos os testes de RLS passaram.")
 psql -U app_api -d gestao -f database/99_rls_tests.sql
 ```
