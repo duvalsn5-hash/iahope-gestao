@@ -41,21 +41,21 @@ class MasterGuideCard extends StatelessWidget {
         onTap: onNewClient,
         done: hasClients,
       ),
-      _Step(
+      const _Step(
         icon: Icons.send_to_mobile,
         title: 'Envie o acesso ao cliente',
         text: 'Na lista de clientes, toque em "Enviar acesso": o WhatsApp abre com o link do app, o CNPJ e o usuário. '
             'A senha você passa separado, por segurança.',
         done: false,
       ),
-      _Step(
+      const _Step(
         icon: Icons.extension_outlined,
         title: 'Ajuste os módulos quando o cliente pedir',
         text: 'Botão "Módulos" de cada cliente: liga e desliga PDV, Financeiro, Compras, Oficina, Balança… '
             'O cliente vê a mudança no próximo acesso.',
         done: false,
       ),
-      _Step(
+      const _Step(
         icon: Icons.event_available,
         title: 'Acompanhe as licenças',
         text: 'Os números no topo mostram quem vence em 7 dias e quem já venceu. "Renovar" muda a data; '

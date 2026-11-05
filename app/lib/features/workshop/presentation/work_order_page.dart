@@ -95,7 +95,7 @@ class _WorkOrderPageState extends ConsumerState<WorkOrderPage> {
   }
 
   Future<void> _advance(OsStatus to, {String? note}) async {
-    if (!await _save(quiet: true)) return;
+    if (!await _save(quiet: true) || !mounted) return;
     final o = _o!;
     if (to == OsStatus.orcamento && o.items.isEmpty) {
       showError(context, 'Lance as peças e a mão de obra antes de enviar o orçamento');

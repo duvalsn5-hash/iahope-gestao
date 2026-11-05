@@ -17,8 +17,8 @@ class OsPrinter {
       } catch (_) {}
     }
     const s = pw.TextStyle(fontSize: 9);
-    final b = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
-    final h = pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold);
+    const b = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
+    const h = pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold);
 
     pw.Widget kv(String k, String v) => pw.RichText(text: pw.TextSpan(children: [
           pw.TextSpan(text: '$k: ', style: b),
@@ -52,13 +52,13 @@ class OsPrinter {
           if (logo != null) pw.Padding(padding: const pw.EdgeInsets.only(right: 12), child: pw.Image(logo, height: 48)),
           pw.Expanded(
             child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              pw.Text(company, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              pw.Text(company, style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
               if (companyDoc != null) pw.Text('CNPJ ${formatCnpj(companyDoc)}', style: s),
             ]),
           ),
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
             pw.Text('ORDEM DE SERVIÇO', style: h),
-            pw.Text('Nº ${o.number.toString().padLeft(5, '0')}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Nº ${o.number.toString().padLeft(5, '0')}', style: const pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
             pw.Text('Entrada ${dateTimeBr(o.openedAt)}', style: s),
             pw.Text(o.status.label, style: s),
           ]),
@@ -101,7 +101,7 @@ class OsPrinter {
             kv('Peças', money(o.partsTotal)),
             kv('Mão de obra', money(o.laborTotal)),
             if (o.discount > 0) kv('Desconto', '- ${money(o.discount)}'),
-            pw.Text('TOTAL ${money(o.total)}', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+            pw.Text('TOTAL ${money(o.total)}', style: const pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
           ]),
         ),
         pw.SizedBox(height: 8),
