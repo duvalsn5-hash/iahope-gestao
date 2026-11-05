@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,7 +26,8 @@ import 'widgets/receipt_dialog.dart';
 /// então basta bipar. No Android há também o botão de câmera.
 ///
 /// Atalhos (Windows/Web):
-///   F2 buscar · F3 cliente · F7 quantidade · F8 remover item · F9 desconto · F10 finalizar
+///   F2 consultar produto · F3 cliente · F7 quantidade · F8 cancela item · F9 desconto · F10 finalizar
+///   Botões grandes à direita: Dinheiro, PIX, Cartão e A Prazo já abrem o pagamento na forma escolhida.
 ///   ↑/↓ navegar · +/- quantidade do item selecionado · Esc limpar · Ctrl+Del cancelar venda
 ///   Digite "3*" antes do código para lançar 3 unidades.
 class PosScreen extends ConsumerStatefulWidget {
@@ -178,12 +181,18 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     _focusSearch();
   }
 
-  Future<void> _finish() async {
-    final s = ref.read(posControllerProvider);
+  Future<void> _finish([PaymentMethod? method]) async {
+    var s = ref.read(posControllerProvider);
     if (s.isEmpty || _busy) return;
+    // A prazo exige cliente: pede o cliente antes de abrir o pagamento
+    if (method == PaymentMethod.prazo && s.customer == null) {
+      await _pickCustomer();
+      s = ref.read(posControllerProvider);
+      if (s.customer == null || !mounted) return;
+    }
     final result = await showDialog<PaymentResult>(
       context: context,
-      builder: (_) => PaymentDialog(total: s.total, customerName: s.customer?.displayName),
+      builder: (_) => PaymentDialog(total: s.total, customerName: s.customer?.displayName, initialMethod: method),
     );
     if (result == null || !mounted) {
       _focusSearch();
@@ -309,6 +318,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     final cash = ref.watch(cashControllerProvider);
@@ -328,6 +338,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
     final state = ref.watch(posControllerProvider);
     final session = ref.watch(sessionControllerProvider);
+    final summary = ref.watch(posSummaryProvider).valueOrNull;
     final wide = MediaQuery.sizeOf(context).width >= 900;
 
     final bindings = <ShortcutActivator, VoidCallback>{
@@ -349,6 +360,24 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       },
     };
 
+    final header = _PosHeader(
+      companyName: session?.tenant.nomeFantasia ?? '',
+      logoUrl: session?.tenant.logoUrl,
+      compact: !wide,
+      hasItems: !state.isEmpty,
+      busy: _busy,
+      cashSummary: cashState.summary!,
+      onSearch: _focusSearch,
+      onCustomer: _pickCustomer,
+      onQty: _editQty,
+      onRemove: _removeSelected,
+      onDiscount: _editDiscount,
+      onFinish: _finish,
+      onWithdraw: () => _cashMove('SANGRIA'),
+      onSupply: () => _cashMove('SUPRIMENTO'),
+      onCloseCash: () => _closeCash(cashState.summary!),
+    );
+
     final searchField = _SearchBar(
       controller: _search,
       focusNode: _searchFocus,
@@ -360,8 +389,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
     final listArea = _choices.isNotEmpty
         ? _ChoicesList(products: _choices, highlighted: _choiceIndex, onPick: _addProduct)
-        : _CartList(
+        : _ItemsTable(
             state: state,
+            compact: !wide,
             onSelect: (i) {
               _pos.select(i);
               if (wide) _focusSearch();
@@ -371,52 +401,44 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             onRemove: (i) => _pos.remove(i),
           );
 
-    final totals = _TotalsPanel(
-      state: state,
-      logoUrl: session?.tenant.logoUrl,
-      companyName: session?.tenant.nomeFantasia ?? '',
-      busy: _busy,
-      showShortcuts: wide,
-      onDiscount: _editDiscount,
-      onCancel: _cancelSale,
-      onFinish: _finish,
-    );
-
-    final cashBar = _CashBar(
-      summary: cashState.summary!,
+    final saleCard = _SaleCard(
+      saleNumber: summary?.nextNumber,
       customer: state.customer,
       onCustomer: _pickCustomer,
       onClearCustomer: () => _pos.setCustomer(null),
-      onWithdraw: () => _cashMove('SANGRIA'),
-      onSupply: () => _cashMove('SUPRIMENTO'),
-      onClose: () => _closeCash(cashState.summary!),
+      search: searchField,
+      list: listArea,
+      state: state,
+      compact: !wide,
+    );
+
+    final payPanel = _PaymentPanel(
+      state: state,
+      busy: _busy,
+      compact: !wide,
+      todaySales: summary?.sales,
+      todayTotal: summary?.total,
+      onPay: _finish,
+      onDiscount: _editDiscount,
+      onCancel: _cancelSale,
     );
 
     return CallbackShortcuts(
       bindings: bindings,
       child: Focus(
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.all(wide ? 12 : 8),
           child: Column(children: [
-            cashBar,
-            const SizedBox(height: 8),
+            header,
+            SizedBox(height: wide ? 12 : 8),
             Expanded(
               child: wide
-              ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Expanded(
-                    flex: 3,
-                    child: Column(children: [searchField, const SizedBox(height: 12), Expanded(child: listArea)]),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(width: 360, child: totals),
-                ])
-              : Column(children: [
-                  searchField,
-                  const SizedBox(height: 8),
-                  Expanded(child: listArea),
-                  const SizedBox(height: 8),
-                  totals,
-                ]),
+                  ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Expanded(child: saleCard),
+                      const SizedBox(width: 12),
+                      SizedBox(width: 320, child: payPanel),
+                    ])
+                  : Column(children: [Expanded(child: saleCard), const SizedBox(height: 8), payPanel]),
             ),
           ]),
         ),
@@ -450,62 +472,6 @@ class _CashClosedPanel extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Barra do topo do PDV: situação do caixa, cliente identificado e ações de caixa.
-class _CashBar extends StatelessWidget {
-  const _CashBar({
-    required this.summary,
-    required this.customer,
-    required this.onCustomer,
-    required this.onClearCustomer,
-    required this.onWithdraw,
-    required this.onSupply,
-    required this.onClose,
-  });
-
-  final CashSummary summary;
-  final Partner? customer;
-  final VoidCallback onCustomer, onClearCustomer, onWithdraw, onSupply, onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    return Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-      Chip(
-        avatar: Icon(Icons.circle, size: 12, color: Colors.green.shade600),
-        label: Text('Caixa aberto · gaveta ${money(summary.expectedCash)} · ${summary.salesCount} venda(s)'),
-      ),
-      customer == null
-          ? ActionChip(avatar: const Icon(Icons.person_search, size: 18), label: const Text('Cliente (F3)'), onPressed: onCustomer)
-          : InputChip(
-              avatar: const Icon(Icons.person, size: 18),
-              label: Text(customer!.displayName, overflow: TextOverflow.ellipsis),
-              backgroundColor: t.colorScheme.primaryContainer,
-              onPressed: onCustomer,
-              onDeleted: onClearCustomer,
-            ),
-      PopupMenuButton<String>(
-        tooltip: 'Caixa',
-        onSelected: (v) {
-          switch (v) {
-            case 'S':
-              onWithdraw();
-            case 'U':
-              onSupply();
-            case 'F':
-              onClose();
-          }
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'S', child: ListTile(leading: Icon(Icons.outbox), title: Text('Sangria'))),
-          PopupMenuItem(value: 'U', child: ListTile(leading: Icon(Icons.move_to_inbox), title: Text('Suprimento'))),
-          PopupMenuItem(value: 'F', child: ListTile(leading: Icon(Icons.lock_outline), title: Text('Fechar caixa'))),
-        ],
-        child: const Chip(avatar: Icon(Icons.point_of_sale, size: 18), label: Text('Caixa ▾')),
-      ),
-    ]);
   }
 }
 
@@ -597,9 +563,318 @@ class _ChoicesList extends StatelessWidget {
   }
 }
 
-class _CartList extends StatelessWidget {
-  const _CartList({
+// =============================================================================
+//  Visual do PDV: faixa azul com atalhos coloridos e relógio, venda no centro,
+//  formas de pagamento à direita.
+// =============================================================================
+const _navy = Color(0xFF0B2A6F);
+const _navy2 = Color(0xFF1546A8);
+const _green = Color(0xFF1FA34A);
+const _red = Color(0xFFD93636);
+const _blue = Color(0xFF1E7BE0);
+const _purple = Color(0xFF7B3FC4);
+const _orange = Color(0xFFF08A12);
+const _amber = Color(0xFFF2B705);
+const _indigo = Color(0xFF3F51B5);
+
+/// Faixa do topo: empresa, botões de atalho coloridos, caixa e relógio.
+class _PosHeader extends StatelessWidget {
+  const _PosHeader({
+    required this.companyName,
+    required this.logoUrl,
+    required this.compact,
+    required this.hasItems,
+    required this.busy,
+    required this.cashSummary,
+    required this.onSearch,
+    required this.onCustomer,
+    required this.onQty,
+    required this.onRemove,
+    required this.onDiscount,
+    required this.onFinish,
+    required this.onWithdraw,
+    required this.onSupply,
+    required this.onCloseCash,
+  });
+
+  final String companyName;
+  final String? logoUrl;
+  final bool compact, hasItems, busy;
+  final CashSummary cashSummary;
+  final VoidCallback onSearch, onCustomer, onQty, onRemove, onDiscount, onFinish, onWithdraw, onSupply, onCloseCash;
+
+  @override
+  Widget build(BuildContext context) {
+    final keys = [
+      _KeyButton('F2', 'Consultar produto', _green, onSearch),
+      _KeyButton('F3', 'Cliente', _blue, onCustomer),
+      _KeyButton('F7', 'Quantidade', _indigo, hasItems ? onQty : null),
+      _KeyButton('F8', 'Cancela item', _red, hasItems ? onRemove : null),
+      _KeyButton('F9', 'Desconto', _amber, hasItems ? onDiscount : null, darkText: true),
+      _KeyButton('F10', 'Finalizar venda', _green, hasItems && !busy ? onFinish : null),
+    ];
+
+    final cashMenu = PopupMenuButton<String>(
+      tooltip: 'Caixa: sangria, suprimento e fechamento',
+      onSelected: (v) {
+        if (v == 'S') {
+          onWithdraw();
+        } else if (v == 'U') {
+          onSupply();
+        } else {
+          onCloseCash();
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: 'S', child: ListTile(leading: Icon(Icons.outbox), title: Text('Sangria'))),
+        PopupMenuItem(value: 'U', child: ListTile(leading: Icon(Icons.move_to_inbox), title: Text('Suprimento'))),
+        PopupMenuItem(value: 'F', child: ListTile(leading: Icon(Icons.lock_outline), title: Text('Fechar caixa'))),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .12), borderRadius: BorderRadius.circular(8)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.circle, size: 10, color: Colors.greenAccent.shade400),
+          const SizedBox(width: 6),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            const Text('CAIXA ABERTO ▾', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+            Text('Gaveta ${money(cashSummary.expectedCash)}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+          ]),
+        ]),
+      ),
+    );
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 14, vertical: compact ? 8 : 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [_navy, _navy2]),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: compact
+          ? Column(children: [
+              Row(children: [
+                CompanyLogo(url: logoUrl, name: companyName, size: 28),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(companyName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
+                cashMenu,
+              ]),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: [
+                  for (final k in keys) Padding(padding: const EdgeInsets.only(right: 6), child: k.build(small: true)),
+                ]),
+              ),
+            ])
+          : Row(children: [
+              CompanyLogo(url: logoUrl, name: companyName, size: 44),
+              const SizedBox(width: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(companyName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                  const Text('Frente de caixa', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                ]),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [
+                    for (final k in keys) Padding(padding: const EdgeInsets.only(right: 8), child: k.build()),
+                  ]),
+                ),
+              ),
+              const SizedBox(width: 12),
+              cashMenu,
+              const SizedBox(width: 16),
+              const _Clock(),
+            ]),
+    );
+  }
+}
+
+/// Botão colorido de atalho (tecla em cima, ação embaixo).
+class _KeyButton {
+  const _KeyButton(this.keyLabel, this.label, this.color, this.onTap, {this.darkText = false});
+  final String keyLabel, label;
+  final Color color;
+  final VoidCallback? onTap;
+  final bool darkText;
+
+  Widget build({bool small = false}) {
+    final enabled = onTap != null;
+    final fg = darkText ? const Color(0xFF3A2A00) : Colors.white;
+    return Opacity(
+      opacity: enabled ? 1 : .45,
+      child: Material(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+        elevation: enabled ? 2 : 0,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: SizedBox(
+            width: small ? 92 : 104,
+            height: small ? 46 : 58,
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text(keyLabel, style: TextStyle(color: fg, fontWeight: FontWeight.w900, fontSize: small ? 14 : 18)),
+              Text(label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  style: TextStyle(color: fg, fontSize: small ? 10 : 11, height: 1.1)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Relógio e data no canto da faixa.
+class _Clock extends StatefulWidget {
+  const _Clock();
+
+  @override
+  State<_Clock> createState() => _ClockState();
+}
+
+class _ClockState extends State<_Clock> {
+  late Timer _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => setState(() => _now = DateTime.now()));
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      const Icon(Icons.schedule, color: Colors.white, size: 22),
+      const SizedBox(width: 8),
+      Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+        Text('${two(_now.hour)}:${two(_now.minute)}:${two(_now.second)}',
+            style: const TextStyle(
+                color: Colors.white, fontSize: 22, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
+        Text(dateBr(_now), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+      ]),
+    ]);
+  }
+}
+
+/// Venda no centro: número, cliente, busca, itens e total.
+class _SaleCard extends StatelessWidget {
+  const _SaleCard({
+    required this.saleNumber,
+    required this.customer,
+    required this.onCustomer,
+    required this.onClearCustomer,
+    required this.search,
+    required this.list,
     required this.state,
+    required this.compact,
+  });
+
+  final int? saleNumber;
+  final Partner? customer;
+  final VoidCallback onCustomer, onClearCustomer;
+  final Widget search, list;
+  final PosState state;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final label = TextStyle(color: _navy2, fontWeight: FontWeight.w800, fontSize: compact ? 12 : 14);
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // número da venda + cliente
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: compact ? 6 : 10),
+          color: _navy.withValues(alpha: .06),
+          child: Row(children: [
+            Text(saleNumber == null ? 'VENDA' : 'VENDA Nº ${saleNumber.toString().padLeft(6, '0')}', style: label),
+            const SizedBox(width: 12),
+            Container(width: 1, height: 22, color: t.dividerColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: InkWell(
+                onTap: onCustomer,
+                child: Row(children: [
+                  Text('CLIENTE: ', style: TextStyle(fontWeight: FontWeight.w700, fontSize: compact ? 12 : 13)),
+                  Expanded(
+                    child: Text(
+                      customer?.displayName.toUpperCase() ?? 'CONSUMIDOR FINAL',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: compact ? 12 : 13, color: customer == null ? t.colorScheme.outline : null),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+            if (customer != null)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Tirar cliente',
+                onPressed: onClearCustomer,
+                icon: const Icon(Icons.close, size: 18),
+              )
+            else
+              TextButton.icon(
+                onPressed: onCustomer,
+                icon: const Icon(Icons.person_search, size: 18),
+                label: Text(compact ? 'F3' : 'Identificar (F3)'),
+              ),
+          ]),
+        ),
+        Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 8), child: search),
+        Expanded(child: list),
+        // rodapé: quantidade de itens e total
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: compact ? 6 : 10),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: t.dividerColor))),
+          child: Row(children: [
+            Text('Qtde. itens: ', style: t.textTheme.bodyMedium),
+            Text('${state.itemCount}', style: const TextStyle(fontWeight: FontWeight.w800)),
+            if (state.unitCount != state.itemCount)
+              Text('  (${number(state.unitCount)} un)', style: t.textTheme.bodySmall),
+            const Spacer(),
+            if (!compact) ...[
+              Text('TOTAL', style: t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(width: 24),
+              Text(money(state.total),
+                  style: t.textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800, color: _navy2)),
+            ],
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Tabela de itens: Descrição · Cód. barras · Qtd · Vlr. unit. · Total.
+class _ItemsTable extends StatelessWidget {
+  const _ItemsTable({
+    required this.state,
+    required this.compact,
     required this.onSelect,
     required this.onInc,
     required this.onDec,
@@ -607,187 +882,267 @@ class _CartList extends StatelessWidget {
   });
 
   final PosState state;
+  final bool compact;
   final ValueChanged<int> onSelect, onInc, onDec, onRemove;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     if (state.isEmpty) {
-      return Card(
-        child: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.shopping_cart_outlined, size: 64, color: t.colorScheme.outline),
-            const SizedBox(height: 8),
-            Text('Caixa livre', style: t.textTheme.titleLarge),
-            const Text('Bipe um produto para começar'),
-          ]),
-        ),
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.qr_code_scanner, size: 64, color: t.colorScheme.outline),
+          const SizedBox(height: 8),
+          Text('CAIXA LIVRE', style: t.textTheme.headlineSmall?.copyWith(color: _navy2, fontWeight: FontWeight.w800)),
+          const Text('Bipe um produto ou digite o nome (F2)'),
+        ]),
       );
     }
-    return Card(
-      child: ListView.separated(
+    const head = TextStyle(color: _navy2, fontWeight: FontWeight.w700, fontSize: 13);
+
+    if (compact) {
+      return ListView.separated(
         itemCount: state.items.length,
         separatorBuilder: (_, __) => const Divider(height: 1),
         itemBuilder: (_, i) {
           final it = state.items[i];
-          final lowStock = it.qty > it.product.stockQty;
           return ListTile(
+            dense: true,
             selected: state.selected == i,
-            selectedTileColor: t.colorScheme.secondaryContainer.withValues(alpha: .5),
-            leading: it.product.imageUrl != null
-                ? ProductThumb(url: it.product.imageUrl, size: 40)
-                : CircleAvatar(radius: 14, child: Text('${i + 1}', style: const TextStyle(fontSize: 12))),
+            selectedTileColor: _blue.withValues(alpha: .10),
+            leading: ProductThumb(url: it.product.imageUrl, size: 36),
             title: Text(it.product.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-              '${number(it.qty)} ${it.product.unit} × ${money(it.product.price)}'
-              '${lowStock ? '  ⚠ estoque ${number(it.product.stockQty)}' : ''}',
-              style: lowStock ? TextStyle(color: t.colorScheme.error) : null,
-            ),
+            subtitle: Text('${number(it.qty)} × ${money(it.product.price)}'),
             onTap: () => onSelect(i),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.remove), onPressed: () => onDec(i)),
               IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.add), onPressed: () => onInc(i)),
-              SizedBox(
-                width: 90,
-                child: Text(money(it.total), textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: Icon(Icons.delete_outline, color: t.colorScheme.error),
-                onPressed: () => onRemove(i),
-              ),
+              Text(money(it.total), style: const TextStyle(fontWeight: FontWeight.bold)),
             ]),
           );
         },
+      );
+    }
+
+    Widget cell(Widget child, {int flex = 1, TextAlign align = TextAlign.left}) => Expanded(
+          flex: flex,
+          child: Align(
+            alignment: align == TextAlign.right ? Alignment.centerRight : Alignment.centerLeft,
+            child: child,
+          ),
+        );
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: t.dividerColor, width: 1.5))),
+        child: Row(children: [
+          SizedBox(width: 36, child: Text('#', style: head)),
+          cell(Text('Descrição', style: head), flex: 5),
+          cell(Text('Cód. Barras', style: head), flex: 3),
+          cell(Text('Qtd.', style: head), flex: 2, align: TextAlign.right),
+          cell(Text('Vlr. Unit.', style: head), flex: 2, align: TextAlign.right),
+          cell(Text('Total', style: head), flex: 2, align: TextAlign.right),
+          const SizedBox(width: 96),
+        ]),
       ),
-    );
+      Expanded(
+        child: ListView.builder(
+          itemCount: state.items.length,
+          itemBuilder: (_, i) {
+            final it = state.items[i];
+            final sel = state.selected == i;
+            final low = it.qty > it.product.stockQty;
+            return Material(
+              color: sel ? _blue.withValues(alpha: .12) : (i.isOdd ? t.colorScheme.surfaceContainerHighest.withValues(alpha: .35) : null),
+              child: InkWell(
+                onTap: () => onSelect(i),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Row(children: [
+                    SizedBox(width: 36, child: Text('${i + 1}', style: t.textTheme.bodySmall)),
+                    cell(
+                      Row(children: [
+                        if (it.product.imageUrl != null)
+                          Padding(padding: const EdgeInsets.only(right: 8), child: ProductThumb(url: it.product.imageUrl, size: 28)),
+                        Flexible(
+                          child: Text(it.product.name.toUpperCase(),
+                              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                        if (low)
+                          Tooltip(
+                            message: 'Estoque: ${number(it.product.stockQty)}',
+                            child: Icon(Icons.warning_amber, size: 16, color: t.colorScheme.error),
+                          ),
+                      ]),
+                      flex: 5,
+                    ),
+                    cell(Text(it.product.barcode ?? it.product.sku, style: t.textTheme.bodySmall), flex: 3),
+                    cell(Text('${number(it.qty)} ${it.product.unit}'), flex: 2, align: TextAlign.right),
+                    cell(Text(money(it.product.price)), flex: 2, align: TextAlign.right),
+                    cell(Text(money(it.total), style: const TextStyle(fontWeight: FontWeight.w800)), flex: 2, align: TextAlign.right),
+                    SizedBox(
+                      width: 96,
+                      child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                        IconButton(visualDensity: VisualDensity.compact, iconSize: 18, icon: const Icon(Icons.remove), onPressed: () => onDec(i)),
+                        IconButton(visualDensity: VisualDensity.compact, iconSize: 18, icon: const Icon(Icons.add), onPressed: () => onInc(i)),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 18,
+                          icon: Icon(Icons.delete_outline, color: t.colorScheme.error),
+                          onPressed: () => onRemove(i),
+                        ),
+                      ]),
+                    ),
+                  ]),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    ]);
   }
 }
 
-class _TotalsPanel extends ConsumerWidget {
-  const _TotalsPanel({
+/// Painel da direita: formas de pagamento em botões grandes e o resumo.
+class _PaymentPanel extends StatelessWidget {
+  const _PaymentPanel({
     required this.state,
-    required this.logoUrl,
-    required this.companyName,
     required this.busy,
-    required this.showShortcuts,
+    required this.compact,
+    required this.onPay,
     required this.onDiscount,
     required this.onCancel,
-    required this.onFinish,
+    this.todaySales,
+    this.todayTotal,
   });
 
   final PosState state;
-  final String? logoUrl;
-  final String companyName;
-  final bool busy, showShortcuts;
-  final VoidCallback onDiscount, onCancel, onFinish;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = Theme.of(context);
-    final summary = ref.watch(posSummaryProvider).valueOrNull;
-    final compact = !showShortcuts;
-
-    final totalBlock = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (!compact) ...[
-        Row(children: [
-          CompanyLogo(url: logoUrl, name: companyName, size: 56),
-          const SizedBox(width: 12),
-          Expanded(child: Text(companyName, style: t.textTheme.titleMedium)),
-        ]),
-        const Divider(height: 24),
-        _kv(context, 'Itens', '${state.itemCount} (${number(state.unitCount)} un)'),
-        _kv(context, 'Subtotal', money(state.subtotal)),
-      ],
-      if (state.discount > 0) _kv(context, 'Desconto', '- ${money(state.discount)}'),
-      Row(children: [
-        Text('TOTAL', style: t.textTheme.titleLarge),
-        const Spacer(),
-        Text(money(state.total),
-            style: (compact ? t.textTheme.headlineMedium : t.textTheme.displaySmall)
-                ?.copyWith(fontWeight: FontWeight.bold, color: t.colorScheme.primary)),
-      ]),
-    ]);
-
-    final actions = Row(children: [
-      OutlinedButton(onPressed: state.isEmpty ? null : onDiscount, child: Text(compact ? '%' : 'Desconto (F9)')),
-      const SizedBox(width: 8),
-      Expanded(
-        child: FilledButton.icon(
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56)),
-          onPressed: state.isEmpty || busy ? null : onFinish,
-          icon: const Icon(Icons.payments),
-          label: Text(compact ? 'Finalizar' : 'Finalizar (F10)', style: const TextStyle(fontSize: 18)),
-        ),
-      ),
-    ]);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            totalBlock,
-            const SizedBox(height: 12),
-            actions,
-            if (!compact) ...[
-              TextButton.icon(
-                onPressed: state.isEmpty ? null : onCancel,
-                icon: const Icon(Icons.cancel_outlined),
-                label: const Text('Cancelar venda (Ctrl+Del)'),
-              ),
-              const Spacer(),
-              if (summary != null)
-                Text('Hoje: ${summary.sales} venda(s) · ${money(summary.total)}', style: t.textTheme.bodySmall),
-              const SizedBox(height: 8),
-              const _ShortcutsLegend(),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _kv(BuildContext c, String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(children: [Text(k), const Spacer(), Text(v, style: const TextStyle(fontWeight: FontWeight.w600))]),
-      );
-}
-
-class _ShortcutsLegend extends StatelessWidget {
-  const _ShortcutsLegend();
+  final bool busy, compact;
+  final int? todaySales;
+  final double? todayTotal;
+  final void Function(PaymentMethod) onPay;
+  final VoidCallback onDiscount, onCancel;
 
   @override
   Widget build(BuildContext context) {
-    const items = [
-      ('F2', 'Buscar'),
-      ('F3', 'Cliente'),
-      ('F7', 'Quantidade'),
-      ('F8', 'Remover item'),
-      ('F9', 'Desconto'),
-      ('F10', 'Finalizar'),
-      ('↑ ↓', 'Navegar'),
-      ('+ −', 'Qtd. (teclado num.)'),
-      ('3*', 'Multiplicar'),
-      ('Esc', 'Limpar busca'),
+    final t = Theme.of(context);
+    final enabled = !state.isEmpty && !busy;
+    final buttons = [
+      _PayButton('Dinheiro', Icons.payments_outlined, _green, enabled ? () => onPay(PaymentMethod.dinheiro) : null),
+      _PayButton('PIX', Icons.pix, _blue, enabled ? () => onPay(PaymentMethod.pix) : null),
+      _PayButton('Cartão', Icons.credit_card, _purple, enabled ? () => onPay(PaymentMethod.debito) : null),
+      _PayButton('A Prazo', Icons.event_note, _orange, enabled ? () => onPay(PaymentMethod.prazo) : null),
     ];
-    final s = Theme.of(context).textTheme.labelSmall;
-    return Wrap(spacing: 10, runSpacing: 4, children: [
-      for (final (k, v) in items)
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).colorScheme.outline),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(k, style: s?.copyWith(fontWeight: FontWeight.bold)),
+
+    if (compact) {
+      return Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              if (state.discount > 0) Text('Desc. ${money(state.discount)}  ', style: const TextStyle(color: _red)),
+              TextButton(onPressed: state.isEmpty ? null : onDiscount, child: const Text('Desconto')),
+              const Spacer(),
+              Text('TOTAL  ', style: t.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              Text(money(state.total), style: t.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800, color: _navy2)),
+            ]),
+            const SizedBox(height: 6),
+            Row(children: [
+              for (final (i, b) in buttons.indexed) ...[
+                if (i > 0) const SizedBox(width: 6),
+                Expanded(child: b.build(small: true)),
+              ],
+            ]),
+          ]),
+        ),
+      );
+    }
+
+    Widget kv(String k, String v, {Color? color, bool big = false}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(children: [
+            Text(k, style: TextStyle(fontWeight: big ? FontWeight.w800 : FontWeight.w600, fontSize: big ? 15 : 12)),
+            const Spacer(),
+            Text(v, style: TextStyle(fontWeight: FontWeight.w800, fontSize: big ? 20 : 15, color: color ?? (big ? _navy2 : null))),
+          ]),
+        );
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('FORMA DE PAGAMENTO',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _navy2, fontWeight: FontWeight.w800, letterSpacing: .5)),
+          const SizedBox(height: 12),
+          for (final b in buttons) Padding(padding: const EdgeInsets.only(bottom: 10), child: b.build()),
+          if (state.customer == null)
+            Text('A Prazo pede o cliente (F3).', textAlign: TextAlign.center, style: t.textTheme.bodySmall),
+          const Spacer(),
+          const Divider(),
+          kv('SUBTOTAL', money(state.subtotal)),
+          InkWell(
+            onTap: state.isEmpty ? null : onDiscount,
+            child: kv('DESCONTO (F9)', state.discount > 0 ? '- ${money(state.discount)}' : money(0), color: _red),
           ),
-          const SizedBox(width: 4),
-          Text(v, style: s),
+          const Divider(),
+          kv('TOTAL', money(state.total), big: true),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: state.isEmpty ? null : onCancel,
+            icon: const Icon(Icons.cancel_outlined, size: 18),
+            label: const Text('Cancelar venda (Ctrl+Del)'),
+          ),
+          if (todaySales != null)
+            Text('Hoje: $todaySales venda(s) · ${money(todayTotal ?? 0)}',
+                textAlign: TextAlign.center, style: t.textTheme.bodySmall),
         ]),
-    ]);
+      ),
+    );
   }
+}
+
+class _PayButton {
+  const _PayButton(this.label, this.icon, this.color, this.onTap);
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
+
+  Widget build({bool small = false}) => Opacity(
+        opacity: onTap == null ? .5 : 1,
+        child: Material(
+          color: color,
+          borderRadius: BorderRadius.circular(10),
+          elevation: onTap == null ? 0 : 2,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onTap,
+            child: SizedBox(
+              height: small ? 52 : 64,
+              child: small
+                  ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(icon, color: Colors.white, size: 20),
+                      Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ])
+                  : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white70, width: 1.5),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(icon, color: Colors.white, size: 24),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(label, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+                    ]),
+            ),
+          ),
+        ),
+      );
 }

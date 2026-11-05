@@ -98,10 +98,11 @@ posRouter.get('/summary', async (req, res) => {
   const r = await db(req, async (c) =>
     (
       await c.query(
-        `SELECT count(*)::int AS sales, coalesce(sum(total), 0)::float AS total
+        `SELECT count(*)::int AS sales, coalesce(sum(total), 0)::float AS total,
+                coalesce((SELECT value FROM app.tenant_counters WHERE name = 'sale'), 0)::int + 1 AS next_number
            FROM app.sales WHERE status = 'FINALIZADA' AND created_at >= date_trunc('day', now() AT TIME ZONE 'America/Fortaleza') AT TIME ZONE 'America/Fortaleza'`,
       )
     ).rows[0],
   );
-  res.json(r);
+  res.json({ sales: r.sales, total: r.total, nextNumber: r.next_number });
 });

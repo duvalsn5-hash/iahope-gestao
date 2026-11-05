@@ -31,8 +31,12 @@ class PosRepository {
         return Receipt.fromJson(r.data as Map<String, dynamic>);
       });
 
-  Future<({int sales, double total})> todaySummary() => apiCall(() async {
+  Future<({int sales, double total, int nextNumber})> todaySummary() => apiCall(() async {
         final r = await _dio.get('/pos/summary');
-        return (sales: (r.data['sales'] as num).toInt(), total: (r.data['total'] as num).toDouble());
+        return (
+          sales: (r.data['sales'] as num).toInt(),
+          total: (r.data['total'] as num).toDouble(),
+          nextNumber: (r.data['nextNumber'] as num? ?? 0).toInt(),
+        );
       });
 }

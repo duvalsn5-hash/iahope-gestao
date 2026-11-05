@@ -11,8 +11,11 @@ typedef PaymentResult = ({List<Payment> payments, int dueDays});
 /// Teclado: F1 Dinheiro · F2 PIX · F3 Débito · F4 Crédito · F6 A prazo ·
 /// Enter lança/confirma · F10 conclui · Esc volta
 class PaymentDialog extends StatefulWidget {
-  const PaymentDialog({super.key, required this.total, this.customerName});
+  const PaymentDialog({super.key, required this.total, this.customerName, this.initialMethod});
   final double total;
+
+  /// Forma já escolhida no painel do PDV (botões Dinheiro / PIX / Cartão / A prazo).
+  final PaymentMethod? initialMethod;
 
   /// Venda a prazo só aparece com cliente identificado.
   final String? customerName;
@@ -49,6 +52,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
   @override
   void initState() {
     super.initState();
+    final m = widget.initialMethod;
+    if (m != null && _methods.contains(m)) _method = m;
     _resetAmount();
   }
 
