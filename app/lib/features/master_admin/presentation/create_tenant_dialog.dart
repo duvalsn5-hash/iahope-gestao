@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/business/business_category.dart';
+import '../../../core/business/business_category_picker.dart';
 import '../../../core/utils/formatters.dart';
 import '../domain/tenant.dart';
 
@@ -21,7 +23,8 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
   final _adminName = TextEditingController();
   final _adminPass = TextEditingController();
   DateTime _expires = DateTime.now().add(const Duration(days: 30));
-  Set<String> _modules = {...kPlans.first.$3};
+  String _category = kBusinessCategories.first.code;
+  Set<String> _modules = {...kBusinessCategories.first.modules};
 
   @override
   void dispose() {
@@ -45,6 +48,7 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
         adminFullName: _adminName.text.trim(),
         adminPassword: _adminPass.text,
         modules: [for (final m in kModules) if (_modules.contains(m.$1)) m.$1],
+        businessCategory: _category,
       ),
     );
   }
@@ -57,7 +61,7 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
     return AlertDialog(
       title: const Text('Novo cliente'),
       content: SizedBox(
-        width: 480,
+        width: 560,
         child: Form(
           key: _form,
           child: SingleChildScrollView(
@@ -105,24 +109,28 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
                 ),
               ]),
               const Divider(height: 32),
-              Align(alignment: Alignment.centerLeft, child: Text('Tipo de negócio (plano)', style: Theme.of(context).textTheme.titleSmall)),
+              Align(alignment: Alignment.centerLeft, child: Text('Categoria de negócio', style: Theme.of(context).textTheme.titleSmall)),
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Escolha um modelo; dá para ajustar os módulos abaixo e mudar depois.',
+                child: Text('O ramo já marca os módulos certos, sugere categorias de produto e adapta o sistema. Dá para mudar depois.',
                     style: Theme.of(context).textTheme.bodySmall),
               ),
               const SizedBox(height: 8),
-              Wrap(spacing: 6, runSpacing: 6, children: [
-                for (final p in kPlans)
-                  ChoiceChip(
-                    avatar: Icon(p.$2, size: 18),
-                    label: Text(p.$1),
-                    selected: _modules.length == p.$3.length && _modules.containsAll(p.$3),
-                    onSelected: (_) => setState(() => _modules = {...p.$3}),
-                  ),
-              ]),
-              const SizedBox(height: 8),
+              BusinessCategoryPicker(
+                selected: _category,
+                onSelected: (c) => setState(() {
+                  _category = c.code;
+                  _modules = {...c.modules};
+                }),
+              ),
+              if (businessCategoryOf(_category).comingSoon != null) ...[
+                const SizedBox(height: 8),
+                _ComingSoon(businessCategoryOf(_category).comingSoon!),
+              ],
+              const SizedBox(height: 12),
+              Align(alignment: Alignment.centerLeft, child: Text('Módulos contratados', style: Theme.of(context).textTheme.labelLarge)),
+              const SizedBox(height: 6),
               Wrap(spacing: 6, runSpacing: 6, children: [
                 for (final m in kModules)
                   FilterChip(
@@ -156,4 +164,21 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
       ],
     );
   }
+}
+
+/// Aviso do que ainda está chegando para o ramo escolhido.
+class _ComingSoon extends StatelessWidget {
+  const _ComingSoon(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: Colors.amber.withValues(alpha: .15), borderRadius: BorderRadius.circular(10)),
+        child: Row(children: [
+          const Icon(Icons.upcoming_outlined, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Em breve para este ramo: $text', style: Theme.of(context).textTheme.bodySmall)),
+        ]),
+      );
 }

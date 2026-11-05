@@ -11,6 +11,9 @@ import { absoluteUrl } from '../auth/auth.routes';
  * O contexto RLS com role=SUPER_ADMIN libera acesso global no banco;
  * o requireRole aqui é a segunda camada (defesa em profundidade).
  */
+/** Ramos de negócio aceitos (iguais ao CHECK do banco) */
+export const BUSINESS_CATEGORIES = ['OFICINA_MOTO', 'MERCADINHO', 'ESTAMPARIA', 'MODA', 'LOJA', 'DISTRIBUIDORA', 'OUTRO'] as const;
+
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole('SUPER_ADMIN'));
 
@@ -27,6 +30,7 @@ const mapTenant = (t: any) => ({
   usersCount: Number(t.users_count ?? 0),
   isPlatform: t.is_platform,
   modules: t.modules ?? [],
+  businessCategory: t.business_category ?? 'OUTRO',
   adminUsername: t.admin_username ?? null,
   createdAt: t.created_at,
 });
@@ -45,8 +49,9 @@ adminRouter.get('/tenants', async (req, res) => {
           WHERE ($1 = '' OR t.cnpj LIKE '%' || regexp_replace($1, '\\D', '', 'g') || '%'
                  OR t.razao_social ILIKE '%' || $1 || '%' OR t.nome_fantasia ILIKE '%' || $1 || '%')
             AND ($2 = '' OR t.status::text = $2)
+            AND ($3 = '' OR t.business_category = $3)
           ORDER BY t.is_platform DESC, t.razao_social`,
-        [q, status],
+        [q, status, String(req.query.category ?? '')],
       )
     ).rows,
   );
@@ -78,6 +83,7 @@ const createSchema = z.object({
   maxUsers: z.number().int().positive().default(10),
   // módulos contratados já na criação (plano). Sem isso, usa o padrão do banco.
   modules: z.array(z.enum(ALL_MODULES as [string, ...string[]])).optional(),
+  businessCategory: z.enum(BUSINESS_CATEGORIES).default('OUTRO'),
   admin: z.object({
     username: z.string().trim().min(3),
     fullName: z.string().trim().min(3),
@@ -92,9 +98,9 @@ adminRouter.post('/tenants', async (req, res) => {
   const tenant = await db(req, async (c) => {
     const t = (
       await c.query(
-        `INSERT INTO app.tenants (cnpj, razao_social, nome_fantasia, license_expires_at, max_users, modules)
-         VALUES ($1, $2, $3, $4, $5, coalesce($6::text[], ARRAY['PDV','PRODUTIVIDADE','FINANCEIRO','COMPRAS']::text[])) RETURNING *`,
-        [b.cnpj, b.razaoSocial, b.nomeFantasia ?? null, b.licenseExpiresAt, b.maxUsers, b.modules ? [...new Set(b.modules)] : null],
+        `INSERT INTO app.tenants (cnpj, razao_social, nome_fantasia, license_expires_at, max_users, modules, business_category)
+         VALUES ($1, $2, $3, $4, $5, coalesce($6::text[], ARRAY['PDV','PRODUTIVIDADE','FINANCEIRO','COMPRAS']::text[]), $7) RETURNING *`,
+        [b.cnpj, b.razaoSocial, b.nomeFantasia ?? null, b.licenseExpiresAt, b.maxUsers, b.modules ? [...new Set(b.modules)] : null, b.businessCategory],
       )
     ).rows[0];
     await c.query(
@@ -156,6 +162,29 @@ adminRouter.patch('/tenants/:id', async (req, res) => {
     );
     if (!r.rows[0]) throw new HttpError(404, 'NAO_ENCONTRADO', 'Empresa não encontrada');
     await c.query(`INSERT INTO app.audit_log (tenant_id, user_id, action, details) VALUES ($1, $2, 'TENANT_ATUALIZADO', $3)`, [
+      req.params.id, req.auth!.sub, b,
+    ]);
+    return r.rows[0];
+  });
+  res.json(mapTenant(t));
+});
+
+/** PATCH /admin/tenants/:id/category — muda o ramo (e, se enviado, os módulos juntos) */
+adminRouter.patch('/tenants/:id/category', async (req, res) => {
+  const b = z
+    .object({
+      businessCategory: z.enum(BUSINESS_CATEGORIES),
+      modules: z.array(z.enum(ALL_MODULES as [string, ...string[]])).optional(),
+    })
+    .parse(req.body);
+  const t = await db(req, async (c) => {
+    const r = await c.query(
+      `UPDATE app.tenants SET business_category = $2, modules = coalesce($3::text[], modules)
+        WHERE id = $1 AND NOT is_platform RETURNING *`,
+      [req.params.id, b.businessCategory, b.modules ? [...new Set(b.modules)] : null],
+    );
+    if (!r.rows[0]) throw new HttpError(404, 'NAO_ENCONTRADO', 'Empresa não encontrada');
+    await c.query(`INSERT INTO app.audit_log (tenant_id, user_id, action, details) VALUES ($1, $2, 'RAMO_ALTERADO', $3)`, [
       req.params.id, req.auth!.sub, b,
     ]);
     return r.rows[0];

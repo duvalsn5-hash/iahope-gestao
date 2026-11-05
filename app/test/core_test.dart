@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iahope_gestao/core/business/business_category.dart';
 import 'package:iahope_gestao/core/utils/formatters.dart';
 import 'package:iahope_gestao/features/pos/domain/pos_models.dart';
 import 'package:iahope_gestao/features/products/domain/product.dart';
@@ -39,5 +40,13 @@ void main() {
     expect(OsStatus.aberta.next, OsStatus.orcamento);
     expect(OsStatus.pronta.next, isNull);
     expect(osStatusFromApi('EM_EXECUCAO'), OsStatus.emExecucao);
+  });
+
+  test('categoria de negócio: ramos, módulos e padrão', () {
+    expect(businessCategoryOf('MODA').label, 'Loja de roupas e calçados');
+    expect(businessCategoryOf('OFICINA_MOTO').modules, contains('OFICINA'));
+    expect(businessCategoryOf('MERCADINHO').modules, contains('BALANCA'));
+    expect(businessCategoryOf('xyz').code, 'OUTRO');
+    expect(kBusinessCategories.map((c) => c.code).toSet().length, kBusinessCategories.length);
   });
 }

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import '../../../core/business/business_category.dart';
 
 enum TenantStatus { ativo, bloqueado }
 
@@ -17,6 +17,7 @@ class Tenant {
     required this.isPlatform,
     this.modules = const [],
     this.adminUsername,
+    this.businessCategory = 'OUTRO',
   });
 
   final String id;
@@ -32,6 +33,9 @@ class Tenant {
   final bool isPlatform;
   final List<String> modules;
   final String? adminUsername;
+  final String businessCategory;
+
+  BusinessCategory get business => businessCategoryOf(businessCategory);
 
   String get displayName => (nomeFantasia?.isNotEmpty ?? false) ? nomeFantasia! : razaoSocial;
   bool get isBlocked => status == TenantStatus.bloqueado;
@@ -57,6 +61,7 @@ class Tenant {
         isPlatform: j['isPlatform'] as bool? ?? false,
         modules: [for (final m in (j['modules'] as List? ?? const [])) m.toString()],
         adminUsername: j['adminUsername'] as String?,
+        businessCategory: (j['businessCategory'] as String?) ?? 'OUTRO',
       );
 }
 
@@ -84,6 +89,7 @@ class NewTenantInput {
     required this.adminFullName,
     required this.adminPassword,
     this.modules,
+    this.businessCategory = 'OUTRO',
   });
 
   final String cnpj, razaoSocial;
@@ -92,6 +98,7 @@ class NewTenantInput {
   final int maxUsers;
   final String adminUsername, adminFullName, adminPassword;
   final List<String>? modules;
+  final String businessCategory;
 
   Map<String, dynamic> toJson() => {
         'cnpj': cnpj,
@@ -100,6 +107,7 @@ class NewTenantInput {
         'licenseExpiresAt': licenseExpiresAt.toIso8601String().substring(0, 10),
         'maxUsers': maxUsers,
         if (modules != null) 'modules': modules,
+        'businessCategory': businessCategory,
         'admin': {'username': adminUsername, 'fullName': adminFullName, 'password': adminPassword},
       };
 }
@@ -114,10 +122,3 @@ const kModules = [
   ('OFICINA', 'Oficina de motos', 'Ordens de serviço, motos, mão de obra, comissões e revisões'),
 ];
 
-/// Planos prontos: um toque marca os módulos certos para cada tipo de negócio.
-const kPlans = [
-  ('Oficina de moto', Icons.two_wheeler, ['PDV', 'FINANCEIRO', 'COMPRAS', 'OFICINA']),
-  ('Mercadinho', Icons.storefront, ['PDV', 'FINANCEIRO', 'COMPRAS', 'BALANCA']),
-  ('Loja / PDV simples', Icons.point_of_sale, ['PDV', 'FINANCEIRO']),
-  ('Distribuidora / logística', Icons.local_shipping, ['PDV', 'FINANCEIRO', 'COMPRAS', 'PRODUTIVIDADE']),
-];

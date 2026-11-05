@@ -81,6 +81,7 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
       primaryColor: u.primary_color,
       licenseExpiresAt: u.license_expires_at,
       modules: u.modules ?? [],
+      businessCategory: u.business_category ?? 'OUTRO',
     },
     credits: CREDITS,
   });
@@ -104,6 +105,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
       primaryColor: data.t.primary_color,
       licenseExpiresAt: data.t.license_expires_at,
       modules: data.t.modules ?? [],
+      businessCategory: data.t.business_category ?? 'OUTRO',
       scaleConfig: data.t.scale_config,
     },
     credits: CREDITS,

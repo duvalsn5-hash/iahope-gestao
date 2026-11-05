@@ -1,3 +1,5 @@
+import '../../../core/business/business_category.dart';
+
 enum UserRole { superAdmin, admin, gerente, operador, caixa, mecanico }
 
 UserRole roleFromApi(String v) => switch (v) {
@@ -73,6 +75,7 @@ class SessionTenant {
     this.primaryColor,
     this.licenseExpiresAt,
     this.modules = const [],
+    this.businessCategory = 'OUTRO',
   });
 
   final String id;
@@ -86,6 +89,9 @@ class SessionTenant {
   /// Módulos contratados: PDV, PRODUTIVIDADE, FINANCEIRO, COMPRAS, BALANCA.
   final List<String> modules;
 
+  /// Ramo de negócio (OFICINA_MOTO, MERCADINHO, ESTAMPARIA, MODA, LOJA, DISTRIBUIDORA, OUTRO).
+  final String businessCategory;
+
   factory SessionTenant.fromJson(Map<String, dynamic> j) => SessionTenant(
         id: j['id'] as String,
         cnpj: j['cnpj'] as String,
@@ -95,6 +101,7 @@ class SessionTenant {
         primaryColor: j['primaryColor'] as String?,
         licenseExpiresAt: DateTime.tryParse('${j['licenseExpiresAt']}'),
         modules: [for (final m in (j['modules'] as List? ?? const [])) m.toString()],
+        businessCategory: (j['businessCategory'] as String?) ?? 'OUTRO',
       );
 
   Map<String, dynamic> toJson() => {
@@ -106,6 +113,7 @@ class SessionTenant {
         'primaryColor': primaryColor,
         'licenseExpiresAt': licenseExpiresAt?.toIso8601String().substring(0, 10),
         'modules': modules,
+        'businessCategory': businessCategory,
       };
 
   SessionTenant copyWith({String? logoUrl, bool clearLogo = false, String? nomeFantasia, String? primaryColor}) =>
@@ -118,6 +126,7 @@ class SessionTenant {
         primaryColor: primaryColor ?? this.primaryColor,
         licenseExpiresAt: licenseExpiresAt,
         modules: modules,
+        businessCategory: businessCategory,
       );
 }
 
@@ -131,6 +140,7 @@ class Session {
   bool get isSuperAdmin => user.role == UserRole.superAdmin;
   bool get isManager => const {UserRole.admin, UserRole.gerente}.contains(user.role);
   bool hasModule(String m) => tenant.modules.contains(m);
+  BusinessCategory get business => businessCategoryOf(tenant.businessCategory);
   bool get canManageCompany => user.role == UserRole.admin || isSuperAdmin;
   bool get canSell => hasModule('PDV') && const {UserRole.admin, UserRole.gerente, UserRole.caixa}.contains(user.role);
   bool get canSeeProductivity =>

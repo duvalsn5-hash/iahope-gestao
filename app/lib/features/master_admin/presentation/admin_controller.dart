@@ -4,11 +4,13 @@ import '../data/admin_repository.dart';
 import '../domain/tenant.dart';
 
 class TenantFilter {
-  const TenantFilter({this.q = '', this.status = ''});
+  const TenantFilter({this.q = '', this.status = '', this.category = ''});
   final String q;
   final String status; // '', 'ATIVO', 'BLOQUEADO'
+  final String category; // '' = todos os ramos
 
-  TenantFilter copyWith({String? q, String? status}) => TenantFilter(q: q ?? this.q, status: status ?? this.status);
+  TenantFilter copyWith({String? q, String? status, String? category}) =>
+      TenantFilter(q: q ?? this.q, status: status ?? this.status, category: category ?? this.category);
 }
 
 final tenantFilterProvider = StateProvider<TenantFilter>((_) => const TenantFilter());
@@ -25,7 +27,7 @@ class TenantsController extends AutoDisposeAsyncNotifier<List<Tenant>> {
   @override
   Future<List<Tenant>> build() {
     final f = ref.watch(tenantFilterProvider);
-    return ref.read(adminRepositoryProvider).list(q: f.q, status: f.status);
+    return ref.read(adminRepositoryProvider).list(q: f.q, status: f.status, category: f.category);
   }
 
   void _replace(Tenant t) {
@@ -44,6 +46,10 @@ class TenantsController extends AutoDisposeAsyncNotifier<List<Tenant>> {
 
   Future<void> setModules(Tenant t, List<String> modules) async {
     _replace(await ref.read(adminRepositoryProvider).setModules(t.id, modules));
+  }
+
+  Future<void> setCategory(Tenant t, String category, List<String> modules) async {
+    _replace(await ref.read(adminRepositoryProvider).setCategory(t.id, category, modules));
   }
 
   Future<void> create(NewTenantInput input) async {

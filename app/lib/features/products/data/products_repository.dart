@@ -13,9 +13,10 @@ class ProductsRepository {
   ProductsRepository(this._dio);
   final Dio _dio;
 
-  Future<List<Product>> search(String q, {bool all = false, bool lowOnly = false}) => apiCall(() async {
+  Future<List<Product>> search(String q, {bool all = false, bool lowOnly = false, String? category}) => apiCall(() async {
         final r = await _dio.get('/products', queryParameters: {
           'q': q,
+          if (category != null && category.isNotEmpty) 'category': category,
           if (all) 'all': '1',
           if (lowOnly) 'low': '1',
         });
@@ -66,5 +67,11 @@ class ProductsRepository {
   Future<List<StockMovement>> movements(String id) => apiCall(() async {
         final r = await _dio.get('/products/$id/movements');
         return (r.data as List).map((e) => StockMovement.fromJson(e as Map<String, dynamic>)).toList();
+      });
+
+  /// Categorias já usadas pela empresa: (nome, quantidade de produtos).
+  Future<List<(String, int)>> categories() => apiCall(() async {
+        final r = await _dio.get('/products/categories');
+        return [for (final e in r.data as List) ((e['name'] as String), (e['count'] as num).toInt())];
       });
 }

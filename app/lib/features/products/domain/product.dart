@@ -12,6 +12,7 @@ class Product {
     this.scaleCode,
     this.isActive = true,
     this.imageUrl,
+    this.category,
   });
 
   final String id;
@@ -31,6 +32,9 @@ class Product {
   /// Foto do produto (URL pública, muda a cada troca).
   final String? imageUrl;
 
+  /// Categoria do produto (Bebidas, Camisetas, Freios…).
+  final String? category;
+
   bool get lowStock => stockQty <= minStock;
 
   /// Margem sobre o preço de venda (%), quando há custo.
@@ -49,6 +53,7 @@ class Product {
         scaleCode: (j['scaleCode'] as num?)?.toInt(),
         isActive: j['isActive'] as bool? ?? true,
         imageUrl: j['imageUrl'] as String?,
+        category: j['category'] as String?,
       );
 }
 
@@ -65,6 +70,7 @@ class ProductInput {
     this.minStock = 0,
     this.scaleCode,
     this.isActive = true,
+    this.category,
   });
 
   final String sku;
@@ -77,6 +83,7 @@ class ProductInput {
   final double minStock;
   final int? scaleCode;
   final bool isActive;
+  final String? category;
 
   Map<String, dynamic> toJson({bool includeStock = true}) => {
         'sku': sku,
@@ -89,6 +96,7 @@ class ProductInput {
         'minStock': minStock,
         'scaleCode': scaleCode,
         'isActive': isActive,
+        'category': (category?.trim().isEmpty ?? true) ? null : category!.trim(),
       };
 }
 

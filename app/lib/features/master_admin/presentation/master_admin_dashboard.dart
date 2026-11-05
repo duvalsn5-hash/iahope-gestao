@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/business/business_category.dart';
+import '../../../core/business/business_category_picker.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/whatsapp.dart';
 import '../../../core/widgets/common_widgets.dart';
@@ -98,11 +100,11 @@ class _MasterAdminDashboardState extends ConsumerState<MasterAdminDashboard> {
   }
 
   Future<void> _modules(Tenant t) async {
-    final selected = await showDialog<List<String>>(context: context, builder: (_) => _ModulesDialog(tenant: t));
-    if (selected == null || !mounted) return;
+    final res = await showDialog<(String, List<String>)>(context: context, builder: (_) => _ModulesDialog(tenant: t));
+    if (res == null || !mounted) return;
     try {
-      await ref.read(tenantsControllerProvider.notifier).setModules(t, selected);
-      if (mounted) showOk(context, 'Módulos de ${t.displayName} atualizados');
+      await ref.read(tenantsControllerProvider.notifier).setCategory(t, res.$1, res.$2);
+      if (mounted) showOk(context, '${t.displayName}: ${businessCategoryOf(res.$1).label}, ${res.$2.length} módulos');
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -202,6 +204,30 @@ class _MasterAdminDashboardState extends ConsumerState<MasterAdminDashboard> {
                     onSelected: (_) => ref.read(tenantFilterProvider.notifier).update((f) => f.copyWith(status: s.$1)),
                   ),
               ]),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: const Text('Todos os ramos'),
+                      selected: filter.category.isEmpty,
+                      onSelected: (_) => ref.read(tenantFilterProvider.notifier).update((f) => f.copyWith(category: '')),
+                    ),
+                  ),
+                  for (final c in kBusinessCategories)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        avatar: Icon(c.icon, size: 16),
+                        label: Text(c.label),
+                        selected: filter.category == c.code,
+                        onSelected: (_) => ref.read(tenantFilterProvider.notifier).update((f) => f.copyWith(category: c.code)),
+                      ),
+                    ),
+                ]),
+              ),
               const SizedBox(height: 12),
               tenants.when(
                 loading: () => const Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator())),
@@ -263,6 +289,7 @@ class _TenantTable extends StatelessWidget {
           columns: const [
             DataColumn(label: Text('Empresa')),
             DataColumn(label: Text('CNPJ')),
+            DataColumn(label: Text('Ramo')),
             DataColumn(label: Text('Status')),
             DataColumn(label: Text('Licença')),
             DataColumn(label: Text('Usuários'), numeric: true),
@@ -280,6 +307,7 @@ class _TenantTable extends StatelessWidget {
                   ]),
                 ])),
                 DataCell(Text(formatCnpj(t.cnpj))),
+                DataCell(t.isPlatform ? const Text('—') : BusinessCategoryBadge(t.business)),
                 DataCell(Tooltip(message: t.blockedReason ?? '', child: _StatusChip(t))),
                 DataCell(Text(_licenseText(t))),
                 DataCell(Text('${t.usersCount}/${t.maxUsers}')),
@@ -304,7 +332,7 @@ class _TenantTable extends StatelessWidget {
                         TextButton.icon(
                           onPressed: () => onModules(t),
                           icon: const Icon(Icons.extension_outlined),
-                          label: Text('Módulos (${t.modules.length})'),
+                          label: Text('Ramo e módulos (${t.modules.length})'),
                         ),
                       ])),
               ]),
@@ -342,12 +370,13 @@ class _TenantCard extends StatelessWidget {
             _StatusChip(t),
           ]),
           const SizedBox(height: 8),
+          if (!t.isPlatform) Padding(padding: const EdgeInsets.only(bottom: 4), child: BusinessCategoryBadge(t.business)),
           Text('Licença: ${_licenseText(t)} · Usuários ${t.usersCount}/${t.maxUsers}'),
           if (t.isBlocked && (t.blockedReason?.isNotEmpty ?? false)) Text('Motivo: ${t.blockedReason}'),
           if (!t.isPlatform)
             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
               IconButton(tooltip: 'Enviar acesso', onPressed: () => onAccess(t), icon: const Icon(Icons.send_to_mobile)),
-              TextButton(onPressed: () => onModules(t), child: Text('Módulos (${t.modules.length})')),
+              TextButton(onPressed: () => onModules(t), child: Text('Ramo e módulos (${t.modules.length})')),
               TextButton(onPressed: () => onRenew(t), child: const Text('Renovar')),
               FilledButton.tonal(onPressed: () => onToggle(t), child: Text(t.isBlocked ? 'Ativar' : 'Bloquear')),
             ]),
@@ -357,7 +386,7 @@ class _TenantCard extends StatelessWidget {
   }
 }
 
-/// Liga/desliga os módulos contratados pela empresa (base para planos de venda).
+/// Ramo de negócio + módulos contratados da empresa.
 class _ModulesDialog extends StatefulWidget {
   const _ModulesDialog({required this.tenant});
   final Tenant tenant;
@@ -368,41 +397,50 @@ class _ModulesDialog extends StatefulWidget {
 
 class _ModulesDialogState extends State<_ModulesDialog> {
   late final Set<String> _sel = {...widget.tenant.modules};
+  late String _category = widget.tenant.businessCategory;
 
   @override
   Widget build(BuildContext context) {
+    final t = Theme.of(context);
     return AlertDialog(
-      title: Text('Módulos · ${widget.tenant.displayName}'),
+      title: Text('Ramo e módulos · ${widget.tenant.displayName}'),
       content: SizedBox(
-        width: 440,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.verified_outlined),
-            title: Text('Sempre incluídos'),
-            subtitle: Text('Produtos (com foto) e estoque, clientes e fornecedores, usuários, empresa e logo'),
-          ),
-          Align(alignment: Alignment.centerLeft, child: Text('Modelos prontos', style: Theme.of(context).textTheme.labelLarge)),
-          const SizedBox(height: 6),
-          Wrap(spacing: 6, runSpacing: 6, children: [
-            for (final p in kPlans)
-              ActionChip(avatar: Icon(p.$2, size: 18), label: Text(p.$1), onPressed: () => setState(() => _sel..clear()..addAll(p.$3))),
-          ]),
-          const Divider(),
-          for (final m in kModules)
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _sel.contains(m.$1),
-              title: Text(m.$2),
-              subtitle: Text(m.$3),
-              onChanged: (v) => setState(() => v == true ? _sel.add(m.$1) : _sel.remove(m.$1)),
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Categoria de negócio', style: t.textTheme.labelLarge),
+            const SizedBox(height: 4),
+            Text('Ao trocar o ramo, os módulos sugeridos são marcados; confira antes de salvar.', style: t.textTheme.bodySmall),
+            const SizedBox(height: 8),
+            BusinessCategoryPicker(
+              selected: _category,
+              onSelected: (c) => setState(() {
+                _category = c.code;
+                _sel..clear()..addAll(c.modules);
+              }),
             ),
-        ]),
+            const Divider(height: 24),
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.verified_outlined),
+              title: Text('Sempre incluídos'),
+              subtitle: Text('Produtos (com foto e categoria) e estoque, clientes e fornecedores, usuários, empresa e logo'),
+            ),
+            for (final m in kModules)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _sel.contains(m.$1),
+                title: Text(m.$2),
+                subtitle: Text(m.$3),
+                onChanged: (v) => setState(() => v == true ? _sel.add(m.$1) : _sel.remove(m.$1)),
+              ),
+          ]),
+        ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
         FilledButton(
-          onPressed: () => Navigator.pop(context, [for (final m in kModules) if (_sel.contains(m.$1)) m.$1]),
+          onPressed: () => Navigator.pop(context, (_category, [for (final m in kModules) if (_sel.contains(m.$1)) m.$1])),
           child: const Text('Salvar'),
         ),
       ],

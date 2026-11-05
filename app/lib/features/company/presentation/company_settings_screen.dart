@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/business/business_category.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/common_widgets.dart';
@@ -106,6 +107,10 @@ class _CompanySettingsScreenState extends ConsumerState<CompanySettingsScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: Column(children: [
+              if (!session.isSuperAdmin) ...[
+                BusinessCategoryCard(category: session.business),
+                const SizedBox(height: 16),
+              ],
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
@@ -207,6 +212,72 @@ class _CompanySettingsScreenState extends ConsumerState<CompanySettingsScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Ramo de negócio da empresa: o que ele adapta, primeiros passos e o que vem por aí.
+class BusinessCategoryCard extends StatelessWidget {
+  const BusinessCategoryCard({super.key, required this.category});
+  final BusinessCategory category;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            CircleAvatar(
+              backgroundColor: t.colorScheme.primaryContainer,
+              child: Icon(category.icon, color: t.colorScheme.onPrimaryContainer),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Categoria de negócio', style: t.textTheme.labelMedium),
+                Text(category.label, style: t.textTheme.titleMedium),
+                Text(category.description, style: t.textTheme.bodySmall),
+              ]),
+            ),
+          ]),
+          if (category.tips.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('Primeiros passos', style: t.textTheme.labelLarge),
+            const SizedBox(height: 4),
+            for (final (i, tip) in category.tips.indexed)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  CircleAvatar(radius: 10, child: Text('${i + 1}', style: const TextStyle(fontSize: 11))),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(tip)),
+                ]),
+              ),
+          ],
+          const SizedBox(height: 12),
+          Text('Categorias de produto sugeridas', style: t.textTheme.labelLarge),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final c in category.productCategories) Chip(label: Text(c), visualDensity: VisualDensity.compact),
+          ]),
+          if (category.comingSoon != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: Colors.amber.withValues(alpha: .15), borderRadius: BorderRadius.circular(10)),
+              child: Row(children: [
+                const Icon(Icons.upcoming_outlined, size: 18),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Em breve: ${category.comingSoon}', style: t.textTheme.bodySmall)),
+              ]),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text('Para mudar o ramo, fale com o suporte IaHope-Technology.', style: t.textTheme.bodySmall),
+        ]),
+      ),
     );
   }
 }

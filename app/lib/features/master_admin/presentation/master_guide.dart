@@ -36,7 +36,7 @@ class MasterGuideCard extends StatelessWidget {
         icon: Icons.add_business,
         title: 'Cadastre o primeiro cliente',
         text: 'CNPJ, razão social, vencimento da licença e o usuário administrador da empresa. '
-            'Escolha o tipo de negócio (oficina, mercadinho…) e os módulos certos já vêm marcados.',
+            'Escolha a categoria de negócio (oficina, mercadinho, estamparia, loja de roupas…) e os módulos certos já vêm marcados.',
         action: 'Novo cliente',
         onTap: onNewClient,
         done: hasClients,
@@ -50,8 +50,8 @@ class MasterGuideCard extends StatelessWidget {
       ),
       const _Step(
         icon: Icons.extension_outlined,
-        title: 'Ajuste os módulos quando o cliente pedir',
-        text: 'Botão "Módulos" de cada cliente: liga e desliga PDV, Financeiro, Compras, Oficina, Balança… '
+        title: 'Ajuste o ramo e os módulos quando o cliente pedir',
+        text: 'Botão "Ramo e módulos" de cada cliente: troca a categoria de negócio e liga e desliga PDV, Financeiro, Compras, Oficina, Balança… '
             'O cliente vê a mudança no próximo acesso.',
         done: false,
       ),
@@ -140,7 +140,7 @@ Future<void> showMasterHelp(BuildContext context) => showDialog<void>(
           ('O que é o Master?', 'É você, dono do sistema. Cadastra as empresas clientes, define o que cada uma pode usar e controla as licenças. '
               'O Master não vê o caixa nem as vendas do cliente pelo menu — cada empresa só enxerga os próprios dados.'),
           ('Como cadastro um cliente?', 'Botão "Novo cliente" (ou Ctrl+N). Informe o CNPJ, a razão social, o vencimento da licença, quantos usuários ele pode ter '
-              'e crie o administrador da empresa (usuário e senha inicial). Escolha o tipo de negócio para marcar os módulos.'),
+              'e crie o administrador da empresa (usuário e senha inicial). Escolha a categoria de negócio para marcar os módulos.'),
           ('O que são os módulos?', 'Partes do sistema que você libera por cliente: PDV e caixa, Financeiro, Compras por XML, Oficina de motos, '
               'Produtividade logística e Balança. Produtos (com foto), clientes, usuários e a logo vêm sempre.'),
           ('Como o cliente entra?', 'Pelo app (Android ou Windows) ou pelo navegador, no endereço do app Web. Ele digita o CNPJ da empresa, o usuário e a senha. '
@@ -187,4 +187,9 @@ String welcomeMessage(Tenant t, {String? adminUsername}) => [
       '',
       'Licença válida até ${dateBr(t.licenseExpiresAt)}.',
       'Na primeira vez, cadastre seus funcionários em "Usuários" e a logo em "Empresa".',
+      if (t.business.tips.isNotEmpty) ...[
+        '',
+        '*Primeiros passos (${t.business.label})*',
+        for (final (i, tip) in t.business.tips.indexed) '${i + 1}. $tip',
+      ],
     ].join('\n');

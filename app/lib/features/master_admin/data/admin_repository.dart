@@ -10,8 +10,8 @@ class AdminRepository {
   AdminRepository(this._dio);
   final Dio _dio;
 
-  Future<List<Tenant>> list({String q = '', String status = ''}) => apiCall(() async {
-        final r = await _dio.get('/admin/tenants', queryParameters: {'q': q, 'status': status});
+  Future<List<Tenant>> list({String q = '', String status = '', String category = ''}) => apiCall(() async {
+        final r = await _dio.get('/admin/tenants', queryParameters: {'q': q, 'status': status, 'category': category});
         return (r.data as List).map((e) => Tenant.fromJson(e as Map<String, dynamic>)).toList();
       });
 
@@ -35,6 +35,11 @@ class AdminRepository {
 
   Future<Tenant> setModules(String id, List<String> modules) => apiCall(() async {
         final r = await _dio.patch('/admin/tenants/$id/modules', data: {'modules': modules});
+        return Tenant.fromJson(r.data as Map<String, dynamic>);
+      });
+
+  Future<Tenant> setCategory(String id, String category, List<String> modules) => apiCall(() async {
+        final r = await _dio.patch('/admin/tenants/$id/category', data: {'businessCategory': category, 'modules': modules});
         return Tenant.fromJson(r.data as Map<String, dynamic>);
       });
 

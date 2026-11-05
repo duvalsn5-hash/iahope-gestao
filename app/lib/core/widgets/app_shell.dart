@@ -50,7 +50,11 @@ class AppShell extends ConsumerWidget {
     final session = ref.watch(sessionControllerProvider);
     if (session == null) return const SizedBox.shrink();
 
-    final items = _allItems.where((i) => canAccess(session, i.path)).toList();
+    final items = [
+      for (final i in _allItems)
+        if (canAccess(session, i.path))
+          i.path == Routes.products ? _NavItem(i.path, session.business.productsLabel, i.icon, i.shortcut, i.hint) : i,
+    ];
     final selected = items.indexWhere((i) => location.startsWith(i.path));
     final compact = Breakpoints.isCompact(context);
     final wide = Breakpoints.isExpanded(context);

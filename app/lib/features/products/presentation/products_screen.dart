@@ -12,16 +12,24 @@ import '../domain/product.dart';
 import 'product_form_dialog.dart';
 
 class ProductFilter {
-  const ProductFilter({this.q = '', this.lowOnly = false});
+  const ProductFilter({this.q = '', this.lowOnly = false, this.category = ''});
   final String q;
   final bool lowOnly;
+  final String category; // '' = todas
+
+  ProductFilter copyWith({String? q, bool? lowOnly, String? category}) =>
+      ProductFilter(q: q ?? this.q, lowOnly: lowOnly ?? this.lowOnly, category: category ?? this.category);
 }
+
+/// Categorias em uso pela empresa (para o filtro e para sugerir no cadastro).
+final productCategoriesProvider = FutureProvider.autoDispose<List<(String, int)>>(
+    (ref) => ref.read(productsRepositoryProvider).categories());
 
 final productFilterProvider = StateProvider.autoDispose<ProductFilter>((_) => const ProductFilter());
 
 final productListProvider = FutureProvider.autoDispose<List<Product>>((ref) {
   final f = ref.watch(productFilterProvider);
-  return ref.read(productsRepositoryProvider).search(f.q, all: true, lowOnly: f.lowOnly);
+  return ref.read(productsRepositoryProvider).search(f.q, all: true, lowOnly: f.lowOnly, category: f.category);
 });
 
 /// Cadastro de produtos: busca, novo, edição, ajuste de estoque e histórico.
@@ -49,8 +57,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   void _onSearch(String v) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
-      final f = ref.read(productFilterProvider);
-      ref.read(productFilterProvider.notifier).state = ProductFilter(q: v.trim(), lowOnly: f.lowOnly);
+      ref.read(productFilterProvider.notifier).update((f) => f.copyWith(q: v.trim()));
     });
   }
 
@@ -59,9 +66,17 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
   Future<void> _edit([Product? p]) async {
     if (!_canEdit) return;
+    final business = ref.read(sessionControllerProvider)?.business;
+    final used = ref.read(productCategoriesProvider).valueOrNull ?? const [];
+    final suggestions = <String>{...business?.productCategories ?? const [], for (final c in used) c.$1}.toList()..sort();
     final result = await showDialog<ProductFormResult>(
       context: context,
-      builder: (_) => ProductFormDialog(initial: p, showScale: _scaleOn),
+      builder: (_) => ProductFormDialog(
+        initial: p,
+        showScale: _scaleOn,
+        categories: suggestions,
+        preferredUnits: business?.units ?? const [],
+      ),
     );
     if (result == null || !mounted) return;
     try {
@@ -73,6 +88,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         await repo.removeImage(saved.id);
       }
       ref.invalidate(productListProvider);
+      ref.invalidate(productCategoriesProvider);
       if (mounted) showOk(context, p == null ? 'Produto cadastrado' : 'Produto atualizado');
     } catch (e) {
       if (mounted) showError(context, e);
@@ -98,7 +114,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     final list = ref.watch(productListProvider);
     final filter = ref.watch(productFilterProvider);
     final compact = Breakpoints.isCompact(context);
-    final canEdit = ref.watch(sessionControllerProvider)?.canEditProducts ?? false;
+    final session = ref.watch(sessionControllerProvider);
+    final canEdit = session?.canEditProducts ?? false;
+    final cats = ref.watch(productCategoriesProvider).valueOrNull ?? const [];
 
     return CallbackShortcuts(
       bindings: {
@@ -118,7 +136,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
             children: [
-              Text('Produtos', style: Theme.of(context).textTheme.headlineSmall),
+              Text(session?.business.productsLabel ?? 'Produtos', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 12),
               Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                 SizedBox(
@@ -138,9 +156,34 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                   label: const Text('Estoque baixo'),
                   avatar: const Icon(Icons.warning_amber, size: 18),
                   selected: filter.lowOnly,
-                  onSelected: (v) => ref.read(productFilterProvider.notifier).state = ProductFilter(q: filter.q, lowOnly: v),
+                  onSelected: (v) => ref.read(productFilterProvider.notifier).update((f) => f.copyWith(lowOnly: v)),
                 ),
               ]),
+              if (cats.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: const Text('Todas as categorias'),
+                        selected: filter.category.isEmpty,
+                        onSelected: (_) => ref.read(productFilterProvider.notifier).update((f) => f.copyWith(category: '')),
+                      ),
+                    ),
+                    for (final c in cats)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text('${c.$1} (${c.$2})'),
+                          selected: filter.category.toLowerCase() == c.$1.toLowerCase(),
+                          onSelected: (_) => ref.read(productFilterProvider.notifier).update((f) => f.copyWith(category: c.$1)),
+                        ),
+                      ),
+                  ]),
+                ),
+              ],
               const SizedBox(height: 12),
               list.when(
                 loading: () => const Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator())),
@@ -193,6 +236,7 @@ class _ProductTable extends StatelessWidget {
           showCheckboxColumn: false,
           columns: const [
             DataColumn(label: Text('Produto')),
+            DataColumn(label: Text('Categoria')),
             DataColumn(label: Text('SKU')),
             DataColumn(label: Text('Código de barras')),
             DataColumn(label: Text('Preço'), numeric: true),
@@ -219,6 +263,7 @@ class _ProductTable extends StatelessWidget {
                       ),
                     Text(p.name, style: TextStyle(color: p.isActive ? null : t.colorScheme.outline)),
                   ])),
+                  DataCell(Text(p.category ?? '—')),
                   DataCell(Text(p.sku)),
                   DataCell(Text(p.barcode ?? '—')),
                   DataCell(Text(money(p.price))),
@@ -251,7 +296,10 @@ class _ProductCard extends StatelessWidget {
         leading: ProductThumb(url: p.imageUrl, size: 44),
         title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Row(children: [
-          Text('${p.sku} · ${money(p.price)} · '),
+          Flexible(
+            child: Text('${p.category != null ? '${p.category} · ' : ''}${p.sku} · ${money(p.price)} · ',
+                overflow: TextOverflow.ellipsis),
+          ),
           _stockText(context, p),
           if (!p.isActive) const Text(' · inativo'),
         ]),

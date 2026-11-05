@@ -21,6 +21,7 @@ const map = (p: any) => ({
   stockQty: Number(p.stock_qty),
   minStock: Number(p.min_stock),
   scaleCode: p.scale_code ?? null,
+  category: p.category ?? null,
   imageUrl: absoluteUrl(p.image_url),
   isActive: p.is_active,
 });
@@ -34,6 +35,7 @@ productsRouter.get('/', async (req, res) => {
   const q = String(req.query.q ?? '').trim();
   const all = req.query.all === '1';
   const low = req.query.low === '1';
+  const cat = String(req.query.category ?? '').trim();
   const limit = all ? 500 : 50;
   const rows = await db(req, async (c) =>
     (
@@ -41,15 +43,29 @@ productsRouter.get('/', async (req, res) => {
         `SELECT * FROM app.products
           WHERE ($2 OR is_active)
             AND (NOT $3 OR stock_qty <= min_stock)
+            AND ($4 = '' OR lower(category) = lower($4))
             AND ($1 = '' OR barcode = $1 OR sku ILIKE $1 || '%' OR name ILIKE '%' || $1 || '%'
                  OR scale_code::text = $1)
           ORDER BY (barcode = $1) DESC NULLS LAST, is_active DESC, name
           LIMIT ${limit}`,
-        [q, all, low],
+        [q, all, low, cat],
       )
     ).rows,
   );
   res.json(rows.map(map));
+});
+
+/** GET /products/categories — categorias já usadas pela empresa (com contagem) */
+productsRouter.get('/categories', async (req, res) => {
+  const rows = await db(req, async (c) =>
+    (
+      await c.query(
+        `SELECT min(category) AS name, count(*)::int AS count FROM app.products
+          WHERE category IS NOT NULL AND is_active GROUP BY lower(category) ORDER BY 1`,
+      )
+    ).rows,
+  );
+  res.json(rows);
 });
 
 /**
@@ -90,6 +106,7 @@ const upsertSchema = z.object({
   stockQty: z.number().default(0),
   minStock: z.number().min(0).default(0),
   scaleCode: z.number().int().positive().optional().nullable(),
+  category: z.string().trim().max(40).optional().nullable(),
   isActive: z.boolean().default(true),
 });
 
@@ -98,9 +115,9 @@ productsRouter.post('/', requireRole('ADMIN', 'GERENTE'), async (req, res) => {
   const b = upsertSchema.parse(req.body);
   const p = await db(req, async (c) => {
     const r = await c.query(
-      `INSERT INTO app.products (sku, barcode, name, unit, price, cost, stock_qty, min_stock, scale_code, is_active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [b.sku, b.barcode || null, b.name, b.unit.toUpperCase(), b.price, b.cost, b.stockQty, b.minStock, b.scaleCode ?? null, b.isActive],
+      `INSERT INTO app.products (sku, barcode, name, unit, price, cost, stock_qty, min_stock, scale_code, is_active, category)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [b.sku, b.barcode || null, b.name, b.unit.toUpperCase(), b.price, b.cost, b.stockQty, b.minStock, b.scaleCode ?? null, b.isActive, b.category || null],
     );
     if (b.stockQty) {
       await c.query(
@@ -120,9 +137,9 @@ productsRouter.put('/:id', requireRole('ADMIN', 'GERENTE'), async (req, res) => 
     (
       await c.query(
         `UPDATE app.products SET sku = $2, barcode = $3, name = $4, unit = $5, price = $6, cost = $7,
-                min_stock = $8, scale_code = $9, is_active = $10
+                min_stock = $8, scale_code = $9, is_active = $10, category = $11
           WHERE id = $1 RETURNING *`,
-        [req.params.id, b.sku, b.barcode || null, b.name, b.unit.toUpperCase(), b.price, b.cost, b.minStock, b.scaleCode ?? null, b.isActive],
+        [req.params.id, b.sku, b.barcode || null, b.name, b.unit.toUpperCase(), b.price, b.cost, b.minStock, b.scaleCode ?? null, b.isActive, b.category || null],
       )
     ).rows[0],
   );

@@ -17,15 +17,27 @@ class ProductFormResult {
   final bool removePhoto;
 }
 
-const kUnits = ['UN', 'KG', 'G', 'L', 'ML', 'M', 'CX', 'PC', 'PCT', 'RL', 'FD', 'DZ'];
+const kUnits = ['UN', 'KG', 'G', 'L', 'ML', 'M', 'CX', 'PC', 'PCT', 'RL', 'FD', 'DZ', 'KIT', 'PAR', 'CJ'];
 
 String _num(double v) => v == 0 ? '' : v.toStringAsFixed(2).replaceAll('.', ',');
 
 /// Cadastro / edição de produto.
 class ProductFormDialog extends StatefulWidget {
-  const ProductFormDialog({super.key, this.initial, this.showScale = false});
+  const ProductFormDialog({
+    super.key,
+    this.initial,
+    this.showScale = false,
+    this.categories = const [],
+    this.preferredUnits = const [],
+  });
   final Product? initial;
   final bool showScale;
+
+  /// Categorias sugeridas (as do ramo + as já usadas pela empresa).
+  final List<String> categories;
+
+  /// Unidades mais usadas no ramo (aparecem primeiro na lista).
+  final List<String> preferredUnits;
 
   @override
   State<ProductFormDialog> createState() => _ProductFormDialogState();
@@ -42,6 +54,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late final _min = TextEditingController(
       text: widget.initial == null || widget.initial!.minStock == 0 ? '' : number(widget.initial!.minStock));
   late final _scale = TextEditingController(text: widget.initial?.scaleCode?.toString() ?? '');
+  late String _category = widget.initial?.category ?? '';
   late String _unit = widget.initial?.unit ?? 'UN';
   late bool _active = widget.initial?.isActive ?? true;
   Uint8List? _photo; // nova foto escolhida (já reduzida)
@@ -100,6 +113,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         minStock: parseMoney(_min.text),
         scaleCode: int.tryParse(_scale.text.trim()),
         isActive: _active,
+        category: _category,
       ),
         newPhoto: _photo,
         removePhoto: _removePhoto,
@@ -111,7 +125,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   Widget build(BuildContext context) {
     const gap = SizedBox(height: 12, width: 12);
     final digits = [FilteringTextInputFormatter.digitsOnly];
-    final units = {...kUnits, _unit}.toList();
+    final units = {...widget.preferredUnits, ...kUnits, _unit}.toList();
 
     return AlertDialog(
       title: Text(_isNew ? 'Novo produto' : 'Editar produto'),
@@ -138,6 +152,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(labelText: 'Descrição'),
                 validator: (v) => (v ?? '').trim().length < 2 ? 'Informe a descrição' : null,
+              ),
+              gap,
+              _CategoryField(
+                initial: _category,
+                options: widget.categories,
+                onChanged: (v) => _category = v,
               ),
               gap,
               Row(children: [
@@ -280,5 +300,38 @@ class _PhotoField extends StatelessWidget {
         ]),
       ),
     ]);
+  }
+}
+
+/// Categoria com sugestões do ramo; aceita digitar uma nova.
+class _CategoryField extends StatelessWidget {
+  const _CategoryField({required this.initial, required this.options, required this.onChanged});
+  final String initial;
+  final List<String> options;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Autocomplete<String>(
+      initialValue: TextEditingValue(text: initial),
+      optionsBuilder: (v) {
+        final q = v.text.trim().toLowerCase();
+        return q.isEmpty ? options : options.where((o) => o.toLowerCase().contains(q));
+      },
+      onSelected: onChanged,
+      fieldViewBuilder: (context, controller, focus, onSubmit) => TextFormField(
+        controller: controller,
+        focusNode: focus,
+        textCapitalization: TextCapitalization.sentences,
+        maxLength: 40,
+        decoration: const InputDecoration(
+          labelText: 'Categoria',
+          hintText: 'Escolha ou digite uma nova',
+          prefixIcon: Icon(Icons.sell_outlined),
+          counterText: '',
+        ),
+        onChanged: onChanged,
+      ),
+    );
   }
 }

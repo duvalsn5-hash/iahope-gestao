@@ -36,6 +36,7 @@ O workflow **"API e banco"** já roda sozinho e confirma que o banco e o isolame
    3. `database/02_seed.sql`
    4. `database/03_fase1.sql` — módulos, clientes/fornecedores, caixa, financeiro, compras e balança
    5. `database/04_oficina.sql` — oficina de moto, usuário mecânico e fotos de produto
+   6. `database/05_categorias.sql` — categoria de negócio da empresa e categoria de produto
 4. Troque as senhas de demonstração (ainda no SQL Editor):
    ```sql
    UPDATE app.users SET password_hash = crypt('SuaSenhaForte!2026', gen_salt('bf', 10))
