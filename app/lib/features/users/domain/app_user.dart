@@ -10,7 +10,15 @@ class AppUser {
     this.isActive = true,
     this.commissionPct = 0,
     this.lastLoginAt,
+    this.locked = false,
+    this.totpEnabled = false,
+    this.mustChangePassword = false,
   });
+
+  /// Bloqueado por senha errada (15 min) — o administrador pode liberar.
+  final bool locked;
+  final bool totpEnabled;
+  final bool mustChangePassword;
 
   final String id;
   final String fullName;
@@ -30,6 +38,9 @@ class AppUser {
         isActive: j['isActive'] as bool? ?? true,
         commissionPct: (j['commissionPct'] as num? ?? 0).toDouble(),
         lastLoginAt: DateTime.tryParse('${j['lastLoginAt']}'),
+        locked: j['locked'] as bool? ?? false,
+        totpEnabled: j['totpEnabled'] as bool? ?? false,
+        mustChangePassword: j['mustChangePassword'] as bool? ?? false,
       );
 }
 

@@ -11,7 +11,7 @@
 #  O que faz (pode rodar de novo quantas vezes quiser — é idempotente):
 #   1. Cria (ou reaproveita) o projeto "iahope-gestao" no Neon, região us-east-1
 #   2. Roda os scripts do banco que faltarem e gera uma senha nova para o app_api
-#   3. Troca a senha do master (e dos usuários demo) para MASTER_PASSWORD
+#   3. Ajusta a senha do master (e da demonstração, se nunca trocada) para MASTER_PASSWORD
 #   4. Cria (ou atualiza) a API "iahope-gestao-api" no Render, plano Free
 #   5. Espera a API responder em /health
 #   6. Grava o endereço da API em app/api_url.txt e recompila Android/Windows/Web
@@ -136,7 +136,7 @@ jobs:
 
           q() { psql "$OWNER_URI" -v ON_ERROR_STOP=1 -Atq "$@"; }
           if [ "$(q -c "select to_regclass('app.tenants') is not null")" != "t" ]; then
-            echo "Banco vazio → criando tudo (00 → 06)"
+            echo "Banco vazio → criando tudo (00 → 07)"
             sed "s|TROQUE-Kq7#vR2m!Lp9xW4z|$APP_PW|" database/00_roles.sql | q -f -
             q -f database/01_schema.sql
             q -f database/02_seed.sql >/dev/null
@@ -144,6 +144,7 @@ jobs:
             q -f database/04_oficina.sql
             q -f database/05_categorias.sql
             q -f database/06_moda_estamparia.sql
+            q -f database/07_seguranca.sql
           else
             echo "Schema já existe."
             if [ "$(q -c "select to_regclass('app.partners') is not null")" != "t" ]; then
@@ -157,6 +158,9 @@ jobs:
             fi
             if [ "$(q -c "select to_regclass('app.custom_orders') is not null")" != "t" ]; then
               echo "Aplicando loja de roupas e estamparia (06_moda_estamparia.sql)"; q -f database/06_moda_estamparia.sql
+            fi
+            if [ "$(q -c "select count(*) from information_schema.columns where table_schema='app' and table_name='users' and column_name='token_version'")" != "1" ]; then
+              echo "Aplicando camadas de segurança (07_seguranca.sql)"; q -f database/07_seguranca.sql
             fi
           fi
 
@@ -179,9 +183,20 @@ jobs:
             echo "Senha nova gerada para o app_api."
           fi
 
-          # senha do master e dos usuários de demonstração = MASTER_PASSWORD
-          printf "UPDATE app.users SET password_hash = crypt(:'pw', gen_salt('bf', 10)) WHERE username IN ('master','admin','caixa1');\n" \
-            | q -v pw="$MASTER_PASSWORD"
+          # A senha do master é o segredo MASTER_PASSWORD (para trocar, troque o segredo).
+          # Só o master da plataforma (e só se a senha mudou, para não derrubar a sessão à toa)
+          # e as contas da demonstração que ninguém trocou ainda. Contas de clientes NUNCA são tocadas.
+          cat <<'SQL' | q -v pw="$MASTER_PASSWORD"
+          UPDATE app.users u SET password_hash = crypt(:'pw', gen_salt('bf', 10))
+            FROM app.tenants t
+           WHERE t.id = u.tenant_id AND t.cnpj = '11222333000181' AND u.username = 'master'
+             AND CASE WHEN u.password_hash LIKE '$2a$%' THEN u.password_hash <> crypt(:'pw', u.password_hash) ELSE true END;
+          UPDATE app.users u SET password_hash = crypt(:'pw', gen_salt('bf', 10))
+            FROM app.tenants t
+           WHERE t.id = u.tenant_id AND t.cnpj = '11444777000161' AND u.username IN ('admin','caixa1')
+             AND CASE WHEN u.password_changed_at IS NULL AND u.password_hash LIKE '$2a$%'
+                      THEN u.password_hash <> crypt(:'pw', u.password_hash) ELSE false END;
+          SQL
 
           echo "::add-mask::$DBURL"
           echo "DATABASE_URL_APP=$DBURL" >> "$GITHUB_ENV"

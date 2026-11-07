@@ -47,22 +47,52 @@ class TenantBranding {
 }
 
 class SessionUser {
-  const SessionUser({required this.id, required this.username, required this.fullName, required this.role});
+  const SessionUser({
+    required this.id,
+    required this.username,
+    required this.fullName,
+    required this.role,
+    this.mustChangePassword = false,
+    this.totpEnabled = false,
+  });
 
   final String id;
   final String username;
   final String fullName;
   final UserRole role;
 
+  /// Senha provisória (criada pelo administrador/Master): troca obrigatória.
+  final bool mustChangePassword;
+
+  /// Verificação em duas etapas ligada.
+  final bool totpEnabled;
+
   factory SessionUser.fromJson(Map<String, dynamic> j) => SessionUser(
         id: j['id'] as String,
         username: j['username'] as String,
         fullName: j['fullName'] as String,
         role: roleFromApi(j['role'] as String),
+        mustChangePassword: j['mustChangePassword'] as bool? ?? false,
+        totpEnabled: j['totpEnabled'] as bool? ?? false,
       );
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'username': username, 'fullName': fullName, 'role': roleToApi(role)};
+  SessionUser copyWith({bool? mustChangePassword, bool? totpEnabled}) => SessionUser(
+        id: id,
+        username: username,
+        fullName: fullName,
+        role: role,
+        mustChangePassword: mustChangePassword ?? this.mustChangePassword,
+        totpEnabled: totpEnabled ?? this.totpEnabled,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'username': username,
+        'fullName': fullName,
+        'role': roleToApi(role),
+        'mustChangePassword': mustChangePassword,
+        'totpEnabled': totpEnabled,
+      };
 }
 
 class SessionTenant {
@@ -76,6 +106,7 @@ class SessionTenant {
     this.licenseExpiresAt,
     this.modules = const [],
     this.businessCategory = 'OUTRO',
+    this.maxDiscountPct = 10,
   });
 
   final String id;
@@ -92,6 +123,9 @@ class SessionTenant {
   /// Ramo de negócio (OFICINA_MOTO, MERCADINHO, ESTAMPARIA, MODA, LOJA, DISTRIBUIDORA, OUTRO).
   final String businessCategory;
 
+  /// Desconto máximo (%) que o caixa dá sem autorização do gerente.
+  final double maxDiscountPct;
+
   factory SessionTenant.fromJson(Map<String, dynamic> j) => SessionTenant(
         id: j['id'] as String,
         cnpj: j['cnpj'] as String,
@@ -102,6 +136,7 @@ class SessionTenant {
         licenseExpiresAt: DateTime.tryParse('${j['licenseExpiresAt']}'),
         modules: [for (final m in (j['modules'] as List? ?? const [])) m.toString()],
         businessCategory: (j['businessCategory'] as String?) ?? 'OUTRO',
+        maxDiscountPct: (j['maxDiscountPct'] as num? ?? 10).toDouble(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -114,9 +149,10 @@ class SessionTenant {
         'licenseExpiresAt': licenseExpiresAt?.toIso8601String().substring(0, 10),
         'modules': modules,
         'businessCategory': businessCategory,
+        'maxDiscountPct': maxDiscountPct,
       };
 
-  SessionTenant copyWith({String? logoUrl, bool clearLogo = false, String? nomeFantasia, String? primaryColor}) =>
+  SessionTenant copyWith({String? logoUrl, bool clearLogo = false, String? nomeFantasia, String? primaryColor, double? maxDiscountPct}) =>
       SessionTenant(
         id: id,
         cnpj: cnpj,
@@ -127,6 +163,7 @@ class SessionTenant {
         licenseExpiresAt: licenseExpiresAt,
         modules: modules,
         businessCategory: businessCategory,
+        maxDiscountPct: maxDiscountPct ?? this.maxDiscountPct,
       );
 }
 
@@ -173,5 +210,6 @@ class Session {
 
   Map<String, dynamic> toJson() => {'token': token, 'user': user.toJson(), 'tenant': tenant.toJson()};
 
-  Session copyWith({SessionTenant? tenant}) => Session(token: token, user: user, tenant: tenant ?? this.tenant);
+  Session copyWith({String? token, SessionUser? user, SessionTenant? tenant}) =>
+      Session(token: token ?? this.token, user: user ?? this.user, tenant: tenant ?? this.tenant);
 }

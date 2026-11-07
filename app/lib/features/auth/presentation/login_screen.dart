@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_config.dart';
@@ -105,11 +106,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!_form.currentState!.validate()) return;
     setState(() => _submitting = true);
     try {
-      await ref.read(sessionControllerProvider.notifier).login(
+      final ticket = await ref.read(sessionControllerProvider.notifier).login(
             cnpj: _cnpj.text,
             username: _user.text,
             password: _pass.text,
           );
+      if (ticket != null && mounted) await _askTotp(ticket);
       // o router redireciona sozinho para a tela inicial do perfil
     } catch (e) {
       if (mounted) {
@@ -120,6 +122,58 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// Verificação em 2 etapas: código de 6 dígitos do aplicativo autenticador.
+  Future<void> _askTotp(String ticket) async {
+    final ctrl = TextEditingController();
+    var busy = false;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => StatefulBuilder(builder: (c, set) {
+        Future<void> go() async {
+          if (ctrl.text.trim().length < 6 || busy) return;
+          set(() => busy = true);
+          try {
+            await ref.read(sessionControllerProvider.notifier).loginTotp(ticket, ctrl.text);
+            if (c.mounted) Navigator.pop(c);
+          } catch (e) {
+            if (c.mounted) showError(c, e);
+            ctrl.clear();
+          } finally {
+            if (c.mounted) set(() => busy = false);
+          }
+        }
+
+        return AlertDialog(
+          icon: const Icon(Icons.verified_user_outlined, size: 36),
+          title: const Text('Verificação em duas etapas'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Abra o aplicativo autenticador no celular e digite o código de 6 dígitos.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              maxLength: 6,
+              style: const TextStyle(fontSize: 28, letterSpacing: 8),
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(counterText: '', hintText: '000000'),
+              onChanged: (v) {
+                if (v.length == 6) go();
+              },
+              onSubmitted: (_) => go(),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: busy ? null : () => Navigator.pop(c), child: const Text('Voltar')),
+            FilledButton(onPressed: busy ? null : go, child: const Text('Entrar')),
+          ],
+        );
+      }),
+    );
   }
 
   @override

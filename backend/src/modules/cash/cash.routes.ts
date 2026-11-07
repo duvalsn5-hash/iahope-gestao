@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db, requireAuth, requireModule, requireRole } from '../../middleware/auth';
+import { audit } from '../../security/audit';
 
 /**
  * Caixa do PDV: abertura, sangria, suprimento, fechamento e histórico.
@@ -69,7 +70,11 @@ cashRouter.post('/movements', requireRole('ADMIN', 'GERENTE', 'CAIXA'), async (r
 /** POST /cash/close { countedAmount, notes } → resumo final com diferença */
 cashRouter.post('/close', requireRole('ADMIN', 'GERENTE', 'CAIXA'), async (req, res) => {
   const b = z.object({ countedAmount: z.number().min(0), notes: z.string().max(500).optional() }).parse(req.body);
-  const s = await db(req, async (c) => (await c.query('SELECT app.close_cash_session($1, $2) AS s', [b.countedAmount, b.notes ?? null])).rows[0].s);
+  const s = await db(req, async (c) => {
+    const r = (await c.query('SELECT app.close_cash_session($1, $2) AS s', [b.countedAmount, b.notes ?? null])).rows[0].s;
+    await audit(c, 'CAIXA_FECHADO', { esperado: r.expectedCash, contado: b.countedAmount, diferenca: r.difference });
+    return r;
+  });
   res.json(mapSummary(s));
 });
 

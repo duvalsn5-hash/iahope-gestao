@@ -12,7 +12,18 @@ export interface JwtPayload {
   tid: string;   // tenant id
   cnpj: string;
   role: Role;
+  tv?: number;   // versão do token (trocar senha / "sair de todos" invalida os antigos)
 }
+
+/** Token de autorização do gerente (desconto acima do limite, cancelamento pelo caixa). */
+export interface SupervisorPayload {
+  sub: string;
+  tid: string;
+  purpose: 'sup';
+  act: SupervisorAction;
+  name: string;
+}
+export type SupervisorAction = 'DESCONTO' | 'CANCELAR_VENDA' | 'TROCA';
 
 /** Módulos contratáveis (o Master liga/desliga por empresa). */
 export type Module = 'PDV' | 'PRODUTIVIDADE' | 'FINANCEIRO' | 'COMPRAS' | 'BALANCA' | 'OFICINA' | 'MODA' | 'ESTAMPARIA';
@@ -21,14 +32,50 @@ export const ALL_MODULES: Module[] = ['PDV', 'PRODUTIVIDADE', 'FINANCEIRO', 'COM
 declare global {
   namespace Express {
     interface Request {
-      auth?: JwtPayload & { modules: string[] };
+      auth?: JwtPayload & { modules: string[]; mustChangePassword: boolean };
     }
   }
 }
 
 export function signToken(p: JwtPayload) {
-  return jwt.sign(p, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] });
+  return jwt.sign(p, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'], algorithm: 'HS256' });
 }
+
+/** Ticket curto entre a senha e o código de 2 etapas (5 min). */
+export const signTotpTicket = (userId: string, tid: string) =>
+  jwt.sign({ sub: userId, tid, purpose: 'totp' }, env.JWT_SECRET, { expiresIn: '5m', algorithm: 'HS256' });
+
+export function readTotpTicket(t: string): { sub: string; tid: string } {
+  try {
+    const p = jwt.verify(t, env.JWT_SECRET, { algorithms: ['HS256'] }) as any;
+    if (p.purpose !== 'totp') throw new Error();
+    return { sub: p.sub, tid: p.tid };
+  } catch {
+    throw new HttpError(401, 'TICKET_INVALIDO', 'Tempo esgotado — entre com a senha de novo');
+  }
+}
+
+export const signSupervisor = (p: Omit<SupervisorPayload, 'purpose'>) =>
+  jwt.sign({ ...p, purpose: 'sup' }, env.JWT_SECRET, { expiresIn: '3m', algorithm: 'HS256' });
+
+/**
+ * Autorização do gerente enviada no cabeçalho X-Supervisor-Token.
+ * Vale só para a mesma empresa e para a ação pedida; dura 3 minutos.
+ */
+export function supervisorFrom(req: Request, action: SupervisorAction): SupervisorPayload | null {
+  const t = req.headers['x-supervisor-token'];
+  if (typeof t !== 'string' || !t) return null;
+  try {
+    const p = jwt.verify(t, env.JWT_SECRET, { algorithms: ['HS256'] }) as SupervisorPayload;
+    if (p.purpose !== 'sup' || p.tid !== req.auth?.tid || p.act !== action) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+/** Rotas liberadas enquanto o usuário ainda precisa trocar a senha inicial. */
+const PASSWORD_CHANGE_ALLOWED = ['/auth/me', '/users/me/password', '/auth/logout-all'];
 
 const REASONS: Record<string, string> = {
   EMPRESA_BLOQUEADA: 'Acesso da empresa bloqueado pelo Administrador Master',
@@ -49,18 +96,28 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
 
   let payload: JwtPayload;
   try {
-    payload = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+    payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload;
+    if ((payload as any).purpose) throw new Error('token de outro tipo');
   } catch {
     return next(new HttpError(401, 'TOKEN_INVALIDO', 'Sessão expirada, faça login novamente'));
   }
 
-  const { rows } = await publicQuery('SELECT ok, reason, modules FROM app.session_check($1, $2)', [payload.sub, payload.tid]);
+  const { rows } = await publicQuery(
+    'SELECT ok, reason, modules, token_version, must_change_password FROM app.session_check($1, $2)',
+    [payload.sub, payload.tid],
+  );
   const check = rows[0];
   if (!check?.ok) {
     const reason = check?.reason ?? 'USUARIO_INEXISTENTE';
     return next(new HttpError(403, reason, REASONS[reason] ?? 'Acesso negado'));
   }
-  req.auth = { ...payload, modules: check.modules ?? [] };
+  if (payload.tv !== check.token_version) {
+    return next(new HttpError(401, 'SESSAO_ENCERRADA', 'Sua sessão foi encerrada (senha trocada ou saída de todos os aparelhos). Entre de novo.'));
+  }
+  req.auth = { ...payload, modules: check.modules ?? [], mustChangePassword: !!check.must_change_password };
+  if (req.auth.mustChangePassword && !PASSWORD_CHANGE_ALLOWED.includes(req.originalUrl.split('?')[0])) {
+    return next(new HttpError(403, 'TROCAR_SENHA', 'Troque a senha inicial para continuar'));
+  }
   next();
 }
 

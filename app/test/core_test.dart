@@ -4,6 +4,7 @@ import 'package:iahope_gestao/core/utils/formatters.dart';
 import 'package:iahope_gestao/features/fashion/domain/fashion.dart';
 import 'package:iahope_gestao/features/pos/domain/pos_models.dart';
 import 'package:iahope_gestao/features/printshop/domain/printshop.dart';
+import 'package:iahope_gestao/features/users/presentation/change_password_dialog.dart';
 import 'package:iahope_gestao/features/products/domain/product.dart';
 import 'package:iahope_gestao/features/workshop/domain/workshop.dart';
 
@@ -74,5 +75,12 @@ void main() {
     expect(g.variant('Preta', 'M')?.id, 'b');
     expect(g.variant('Branca', 'M'), isNull);
     expect(const Payment(PaymentMethod.vale, 30, voucher: 'VT000001').toJson(), {'method': 'VALE', 'amount': 30, 'voucher': 'VT000001'});
+  });
+
+  test('senha: mesma política da API', () {
+    expect(passwordProblem('1234567'), isNotNull);
+    expect(passwordProblem('somenteletras'), isNotNull);
+    expect(passwordProblem('caixa2forte9', username: 'caixa2'), isNotNull);
+    expect(passwordProblem('Balcao7forte', username: 'caixa2'), isNull);
   });
 }

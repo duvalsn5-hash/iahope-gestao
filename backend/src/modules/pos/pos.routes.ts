@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { CREDITS } from '../../config/env';
-import { db, requireAuth, requireModule, requireRole } from '../../middleware/auth';
+import { db, requireAuth, requireModule, requireRole, supervisorFrom } from '../../middleware/auth';
+import { audit } from '../../security/audit';
 import { HttpError } from '../../middleware/errors';
 import { absoluteUrl } from '../auth/auth.routes';
 
@@ -70,6 +71,27 @@ export async function loadReceipt(c: any, saleId: string) {
 posRouter.post('/sales', requireRole('ADMIN', 'GERENTE', 'CAIXA'), async (req, res) => {
   const b = closeSchema.parse(req.body);
   const receipt = await db(req, async (c) => {
+    // desconto acima do limite da empresa: caixa precisa da autorização do gerente
+    if (b.discount > 0) {
+      const lim = (
+        await c.query(
+          `SELECT t.max_discount_pct,
+                  (SELECT coalesce(sum(p.price * x.qty), 0) FROM app.products p
+                     JOIN jsonb_to_recordset($2::jsonb) AS x(product_id uuid, qty numeric) ON x.product_id = p.id) AS subtotal
+             FROM app.tenants t WHERE t.id = $1`,
+          [req.auth!.tid, JSON.stringify(b.items.map((i) => ({ product_id: i.productId, qty: i.qty })))],
+        )
+      ).rows[0];
+      const pct = Number(lim.subtotal) > 0 ? (b.discount / Number(lim.subtotal)) * 100 : 100;
+      if (pct > Number(lim.max_discount_pct) + 0.001) {
+        const sup = req.auth!.role === 'CAIXA' ? supervisorFrom(req, 'DESCONTO') : { name: 'próprio gestor' };
+        if (!sup) {
+          throw new HttpError(403, 'PRECISA_GERENTE',
+            `Desconto de ${pct.toFixed(1)}% passa do limite de ${Number(lim.max_discount_pct)}% — precisa da autorização do gerente`);
+        }
+        await audit(c, 'DESCONTO_ACIMA_LIMITE', { desconto: b.discount, percentual: Math.round(pct * 10) / 10, autorizado_por: sup.name });
+      }
+    }
     const { rows } = await c.query('SELECT app.close_sale($1::jsonb, $2::jsonb, $3, $4, false, $5, $6) AS id', [
       JSON.stringify(b.items.map((i) => ({ product_id: i.productId, qty: i.qty }))),
       JSON.stringify(b.payments),
@@ -89,8 +111,16 @@ posRouter.get('/sales/:id', async (req, res) => {
 });
 
 /** POST /pos/sales/:id/cancel — cancela e devolve estoque */
-posRouter.post('/sales/:id/cancel', requireRole('ADMIN', 'GERENTE'), async (req, res) => {
-  await db(req, (c) => c.query('SELECT app.cancel_sale($1)', [req.params.id]));
+posRouter.post('/sales/:id/cancel', requireRole('ADMIN', 'GERENTE', 'CAIXA'), async (req, res) => {
+  const sup = req.auth!.role === 'CAIXA' ? supervisorFrom(req, 'CANCELAR_VENDA') : null;
+  if (req.auth!.role === 'CAIXA' && !sup) {
+    throw new HttpError(403, 'PRECISA_GERENTE', 'Cancelar venda precisa da autorização do gerente');
+  }
+  await db(req, async (c) => {
+    const s = (await c.query('SELECT sale_number, total FROM app.sales WHERE id = $1', [req.params.id])).rows[0];
+    await c.query('SELECT app.cancel_sale($1)', [req.params.id]);
+    await audit(c, 'VENDA_CANCELADA', { venda: s?.sale_number, total: Number(s?.total ?? 0), autorizado_por: sup?.name ?? null });
+  });
   res.json({ ok: true });
 });
 

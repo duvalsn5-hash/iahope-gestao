@@ -9,6 +9,8 @@ import '../../../core/business/business_category_picker.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/whatsapp.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../auth/presentation/account_security_dialog.dart';
+import '../../auth/presentation/session_controller.dart';
 import '../../users/presentation/change_password_dialog.dart';
 import '../domain/tenant.dart';
 import 'admin_controller.dart';
@@ -183,6 +185,18 @@ class _MasterAdminDashboardState extends ConsumerState<MasterAdminDashboard> {
                 onChangePassword: () => showChangePasswordDialog(context),
                 onOpenHelp: () => showMasterHelp(context),
               ),
+              if (!(ref.watch(sessionControllerProvider)?.user.totpEnabled ?? true)) ...[
+                const SizedBox(height: 12),
+                Card(
+                  color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: .5),
+                  child: ListTile(
+                    leading: const Icon(Icons.gpp_maybe_outlined),
+                    title: const Text('Proteja a conta Master com a verificação em duas etapas'),
+                    subtitle: const Text('Ela controla todas as empresas. Com as 2 etapas, só entra quem tiver a senha E o seu celular.'),
+                    trailing: FilledButton(onPressed: () => showAccountSecurity(context), child: const Text('Ligar agora')),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                 SizedBox(

@@ -183,7 +183,7 @@ String welcomeMessage(Tenant t, {String? adminUsername}) => [
       '',
       '*CNPJ:* ${formatCnpj(t.cnpj)}',
       '*Usuário:* ${adminUsername ?? 'admin'}',
-      '*Senha:* enviaremos em outra mensagem.',
+      '*Senha:* enviaremos em outra mensagem (provisória: no 1º acesso o sistema pede para criar a sua).',
       '',
       'Licença válida até ${dateBr(t.licenseExpiresAt)}.',
       'Na primeira vez, cadastre seus funcionários em "Usuários" e a logo em "Empresa".',

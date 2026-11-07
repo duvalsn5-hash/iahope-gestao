@@ -122,7 +122,7 @@ class PosController extends Notifier<PosState> {
         selected: items.isEmpty ? null : 0,
       );
 
-  Future<Receipt> finish(List<Payment> payments, {int dueDays = 30}) async {
+  Future<Receipt> finish(List<Payment> payments, {int dueDays = 30, String? supervisorToken}) async {
     final receipt = await ref.read(posRepositoryProvider).closeSale(
           items: state.items,
           payments: payments,
@@ -130,6 +130,7 @@ class PosController extends Notifier<PosState> {
           customerId: state.customer?.id,
           customerDoc: state.customer?.doc,
           dueDays: dueDays,
+          supervisorToken: supervisorToken,
         );
     clear();
     ref.invalidate(posSummaryProvider);

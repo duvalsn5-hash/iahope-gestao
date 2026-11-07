@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { db, requireAuth, requireRole } from '../../middleware/auth';
+import { db, requireAuth, requireRole, signToken } from '../../middleware/auth';
+import { audit } from '../../security/audit';
+import { assertStrongPassword } from '../../security/password';
 import { HttpError } from '../../middleware/errors';
 
 /**
@@ -22,7 +24,12 @@ const map = (u: any) => ({
   isActive: u.is_active,
   commissionPct: Number(u.commission_pct ?? 0),
   lastLoginAt: u.last_login_at,
+  mustChangePassword: !!u.must_change_password,
+  totpEnabled: !!u.totp_enabled,
+  locked: u.locked_until != null && new Date(u.locked_until) > new Date(),
 });
+const COLS = `id, username::text, full_name, email::text, role, is_active, commission_pct, last_login_at,
+              must_change_password, totp_enabled, locked_until`;
 
 /** GET /users — gestão (ADMIN/GERENTE). ?role=MECANICO para listas de seleção */
 usersRouter.get('/', requireRole('ADMIN', 'GERENTE', 'CAIXA', 'MECANICO'), async (req, res) => {
@@ -30,7 +37,7 @@ usersRouter.get('/', requireRole('ADMIN', 'GERENTE', 'CAIXA', 'MECANICO'), async
   const r = await db(req, async (c) => {
     const users = (
       await c.query(
-        `SELECT id, username::text, full_name, email::text, role, is_active, commission_pct, last_login_at
+        `SELECT ${COLS}
            FROM app.users
           WHERE tenant_id = $1 AND role <> 'SUPER_ADMIN' AND ($2 = '' OR role::text = $2)
           ORDER BY is_active DESC, full_name`,
@@ -74,17 +81,21 @@ async function assertSeat(c: any, tenantId: string) {
 /** POST /users */
 usersRouter.post('/', requireRole('ADMIN'), async (req, res) => {
   const b = createSchema.parse(req.body);
+  assertStrongPassword(b.password, b.username);
   const hash = await bcrypt.hash(b.password, 10);
   const u = await db(req, async (c) => {
     await assertSeat(c, req.auth!.tid);
-    return (
+    // senha criada pelo administrador é provisória: a pessoa troca no 1º acesso
+    const nu = (
       await c.query(
-        `INSERT INTO app.users (username, full_name, email, role, password_hash, commission_pct)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, username::text, full_name, email::text, role, is_active, commission_pct, last_login_at`,
+        `INSERT INTO app.users (username, full_name, email, role, password_hash, commission_pct, must_change_password)
+         VALUES ($1, $2, $3, $4, $5, $6, true)
+         RETURNING ${COLS}`,
         [b.username, b.fullName, b.email || null, b.role, hash, b.commissionPct],
       )
     ).rows[0];
+    await audit(c, 'USUARIO_CRIADO', { usuario: b.username, perfil: b.role });
+    return nu;
   });
   res.status(201).json(map(u));
 });
@@ -96,6 +107,8 @@ const updateSchema = z.object({
   isActive: z.boolean(),
   commissionPct: z.number().min(0).max(100).default(0),
   newPassword: z.string().min(8, 'Senha com no mínimo 8 caracteres').optional().nullable().or(z.literal('')),
+  unlock: z.boolean().default(false),     // libera usuário bloqueado por senha errada
+  resetTotp: z.boolean().default(false),  // perdeu o celular: zera as 2 etapas
 });
 
 /** PUT /users/:id — editar, desativar, trocar senha */
@@ -104,20 +117,30 @@ usersRouter.put('/:id', requireRole('ADMIN'), async (req, res) => {
   if (req.params.id === req.auth!.sub && (!b.isActive || b.role !== 'ADMIN')) {
     throw new HttpError(422, 'PROPRIO_USUARIO', 'Você não pode desativar nem tirar o perfil de administrador de si mesmo');
   }
+  if (b.newPassword) assertStrongPassword(b.newPassword);
   const hash = b.newPassword ? await bcrypt.hash(b.newPassword, 10) : null;
   const u = await db(req, async (c) => {
     const cur = (await c.query(`SELECT is_active, role FROM app.users WHERE id = $1 AND role <> 'SUPER_ADMIN'`, [req.params.id])).rows[0];
     if (!cur) throw new HttpError(404, 'NAO_ENCONTRADO', 'Usuário não encontrado');
     if (!cur.is_active && b.isActive) await assertSeat(c, req.auth!.tid);
-    return (
+    const nu = (
       await c.query(
         `UPDATE app.users SET full_name = $2, email = $3, role = $4, is_active = $5, commission_pct = $6,
-                password_hash = coalesce($7, password_hash)
+                password_hash = coalesce($7, password_hash),
+                must_change_password = CASE WHEN $7 IS NOT NULL THEN id <> app.current_user_id() ELSE must_change_password END,
+                failed_logins = CASE WHEN $8 THEN 0 ELSE failed_logins END,
+                locked_until = CASE WHEN $8 THEN NULL ELSE locked_until END,
+                totp_enabled = CASE WHEN $9 THEN false ELSE totp_enabled END,
+                totp_secret = CASE WHEN $9 THEN NULL ELSE totp_secret END
           WHERE id = $1
-          RETURNING id, username::text, full_name, email::text, role, is_active, commission_pct, last_login_at`,
-        [req.params.id, b.fullName, b.email || null, b.role, b.isActive, b.commissionPct, hash],
+          RETURNING ${COLS}`,
+        [req.params.id, b.fullName, b.email || null, b.role, b.isActive, b.commissionPct, hash, b.unlock, b.resetTotp],
       )
     ).rows[0];
+    await audit(c, 'USUARIO_ALTERADO', {
+      usuario: nu.username, perfil: b.role, ativo: b.isActive, senha_redefinida: !!hash, desbloqueado: b.unlock, '2fa_zerada': b.resetTotp,
+    });
+    return nu;
   });
   res.json(map(u));
 });
@@ -125,12 +148,22 @@ usersRouter.put('/:id', requireRole('ADMIN'), async (req, res) => {
 /** PUT /users/me/password — qualquer usuário troca a própria senha */
 usersRouter.put('/me/password', async (req, res) => {
   const b = z.object({ current: z.string().min(1), next: z.string().min(8, 'Senha com no mínimo 8 caracteres') }).parse(req.body);
-  await db(req, async (c) => {
-    const u = (await c.query('SELECT password_hash FROM app.users WHERE id = $1', [req.auth!.sub])).rows[0];
+  const tv = await db(req, async (c) => {
+    const u = (await c.query('SELECT username::text, password_hash FROM app.users WHERE id = $1', [req.auth!.sub])).rows[0];
     if (!u || !(await bcrypt.compare(b.current, u.password_hash))) {
       throw new HttpError(422, 'SENHA_ATUAL', 'Senha atual incorreta');
     }
-    await c.query('UPDATE app.users SET password_hash = $2 WHERE id = $1', [req.auth!.sub, await bcrypt.hash(b.next, 10)]);
+    if (b.current === b.next) throw new HttpError(422, 'SENHA_IGUAL', 'A nova senha precisa ser diferente da atual');
+    assertStrongPassword(b.next, u.username);
+    const r = (
+      await c.query('UPDATE app.users SET password_hash = $2, must_change_password = false WHERE id = $1 RETURNING token_version', [
+        req.auth!.sub, await bcrypt.hash(b.next, 10),
+      ])
+    ).rows[0];
+    await audit(c, 'SENHA_ALTERADA');
+    return r.token_version as number;
   });
-  res.json({ ok: true });
+  // trocar a senha derruba as outras sessões; este aparelho recebe um token novo
+  const { sub, tid, cnpj, role } = req.auth!;
+  res.json({ ok: true, token: signToken({ sub, tid, cnpj, role, tv }) });
 });

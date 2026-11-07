@@ -5,9 +5,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/domain/session.dart';
 import '../../features/auth/presentation/session_controller.dart';
+import '../../features/auth/presentation/account_security_dialog.dart';
 import '../../features/users/presentation/change_password_dialog.dart';
 import '../router/app_router.dart';
 import 'common_widgets.dart';
+import 'security_guard.dart';
 
 class _NavItem {
   const _NavItem(this.path, this.label, this.icon, this.shortcut, this.hint);
@@ -93,12 +95,15 @@ class AppShell extends ConsumerWidget {
           onSelected: (v) {
             if (v == 'pw') {
               showChangePasswordDialog(context);
+            } else if (v == 'sec') {
+              showAccountSecurity(context);
             } else {
               ref.read(sessionControllerProvider.notifier).logout();
             }
           },
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'pw', child: ListTile(leading: Icon(Icons.lock_reset), title: Text('Trocar minha senha'))),
+            PopupMenuItem(value: 'sec', child: ListTile(leading: Icon(Icons.shield_outlined), title: Text('Segurança da conta'))),
             PopupMenuItem(value: 'out', child: ListTile(leading: Icon(Icons.logout), title: Text('Sair'))),
           ],
         ),
@@ -127,7 +132,8 @@ class AppShell extends ConsumerWidget {
           ],
         );
 
-    return CallbackShortcuts(
+    return SecurityGuard(
+      child: CallbackShortcuts(
       bindings: shortcuts,
       child: Focus(
         autofocus: true,
@@ -151,6 +157,7 @@ class AppShell extends ConsumerWidget {
                 ]),
         ),
       ),
+    ),
     );
   }
 }

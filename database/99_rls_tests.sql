@@ -497,6 +497,36 @@ DO $$ BEGIN
 END $$;
 ROLLBACK;
 
+-- ================================================================ SEGURANÇA
+-- ---------------------------------------------------------------- 17. bloqueio, sessões e auditoria
+BEGIN;
+DO $$ DECLARE uid uuid; tv0 int; r record; i int; BEGIN
+  SELECT u.user_id, u.token_version INTO uid, tv0 FROM app.auth_lookup('11444777000161','caixa1') u;
+  FOR i IN 1..4 LOOP PERFORM app.login_attempt(uid, false, '10.0.0.1'); END LOOP;
+  ASSERT (SELECT locked_until FROM app.auth_lookup('11444777000161','caixa1')) IS NULL, 'bloqueou cedo demais';
+  SELECT * INTO r FROM app.login_attempt(uid, false, '10.0.0.1');
+  ASSERT r.fails = 5 AND r.locked > now(), '5ª senha errada deveria bloquear';
+  PERFORM app.login_attempt(uid, true, '10.0.0.1');
+  ASSERT (SELECT failed_logins FROM app.auth_lookup('11444777000161','caixa1')) = 0, 'login certo não zerou tentativas';
+  -- sessão: trocar a senha muda a versão do token
+  PERFORM set_config('app.role', 'ADMIN', true);
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  UPDATE app.users SET password_hash = 'x' WHERE id = uid;
+  ASSERT (SELECT token_version FROM app.session_check(uid, current_setting('app.tenant_id')::uuid)) = tv0 + 1,
+         'troca de senha não derrubou as sessões';
+  -- auditoria: admin lê a da própria empresa, não altera
+  ASSERT (SELECT count(*) FROM app.audit_log WHERE action LIKE 'LOGIN%') >= 6, 'admin não vê a auditoria da empresa';
+  ASSERT (SELECT count(*) FROM app.audit_log WHERE tenant_id <> current_setting('app.tenant_id')::uuid) = 0, 'vazou auditoria de outra empresa';
+  BEGIN
+    DELETE FROM app.audit_log;
+    RAISE EXCEPTION 'FALHA: apagou a auditoria';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  PERFORM set_config('app.role', 'CAIXA', true);
+  ASSERT (SELECT count(*) FROM app.audit_log) = 0, 'caixa não deveria ler a auditoria';
+  RAISE NOTICE 'OK 17: bloqueio na 5ª senha errada, troca de senha derruba sessões, auditoria só para gestores e sem apagar';
+END $$;
+ROLLBACK;
+
 -- limpeza
 BEGIN;
 SELECT set_config('app.role', 'SUPER_ADMIN', true);

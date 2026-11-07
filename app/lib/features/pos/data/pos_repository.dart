@@ -18,9 +18,12 @@ class PosRepository {
     String? customerDoc,
     String? customerId,
     int dueDays = 30,
+    String? supervisorToken,
   }) =>
       apiCall(() async {
-        final r = await _dio.post('/pos/sales', data: {
+        final r = await _dio.post('/pos/sales',
+            options: supervisorToken == null ? null : Options(headers: {'X-Supervisor-Token': supervisorToken}),
+            data: {
           'items': [for (final i in items) {'productId': i.product.id, 'qty': i.qty}],
           'payments': [for (final p in payments) p.toJson()],
           'discount': discount,

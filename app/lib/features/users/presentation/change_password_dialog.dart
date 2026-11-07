@@ -2,14 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/common_widgets.dart';
+import '../../auth/presentation/session_controller.dart';
 import '../data/users_repository.dart';
 
 /// Qualquer usuário (inclusive o Master) troca a própria senha.
-Future<void> showChangePasswordDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _ChangePasswordDialog());
+/// [forced]: senha provisória — não dá para fechar sem trocar.
+Future<void> showChangePasswordDialog(BuildContext context, {bool forced = false}) => showDialog<void>(
+      context: context,
+      barrierDismissible: !forced,
+      builder: (_) => _ChangePasswordDialog(forced: forced),
+    );
+
+/// Mesmas regras da API: 8+, letras e números, sem o nome de usuário.
+String? passwordProblem(String v, {String? username}) {
+  if (v.length < 8) return 'Mínimo 8 caracteres';
+  if (!RegExp(r'[A-Za-zÀ-ÿ]').hasMatch(v) || !RegExp(r'\d').hasMatch(v)) return 'Use letras e números';
+  if (username != null && username.isNotEmpty && v.toLowerCase().contains(username.toLowerCase())) {
+    return 'Não use o nome de usuário na senha';
+  }
+  return null;
+}
 
 class _ChangePasswordDialog extends ConsumerStatefulWidget {
-  const _ChangePasswordDialog();
+  const _ChangePasswordDialog({this.forced = false});
+  final bool forced;
 
   @override
   ConsumerState<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
@@ -34,10 +50,11 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
-      await ref.read(usersRepositoryProvider).changeMyPassword(_current.text, _next.text);
+      final token = await ref.read(usersRepositoryProvider).changeMyPassword(_current.text, _next.text);
+      await ref.read(sessionControllerProvider.notifier).replaceToken(token, mustChangePassword: false);
       if (!mounted) return;
       Navigator.pop(context);
-      showOk(context, 'Senha alterada');
+      showOk(context, 'Senha alterada. Os outros aparelhos vão pedir login de novo.');
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -47,13 +64,21 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Trocar minha senha'),
+    final username = ref.watch(sessionControllerProvider)?.user.username;
+    return PopScope(
+      canPop: !widget.forced,
+      child: AlertDialog(
+      title: Text(widget.forced ? 'Crie sua senha' : 'Trocar minha senha'),
       content: SizedBox(
         width: 380,
         child: Form(
           key: _form,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (widget.forced)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text('Você entrou com uma senha provisória. Para continuar, crie uma senha só sua.'),
+              ),
             TextFormField(
               controller: _current,
               autofocus: true,
@@ -66,7 +91,7 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
               controller: _next,
               obscureText: true,
               decoration: const InputDecoration(labelText: 'Nova senha', helperText: 'mínimo 8 caracteres; misture letras e números'),
-              validator: (v) => (v ?? '').length < 8 ? 'Mínimo 8 caracteres' : null,
+              validator: (v) => passwordProblem(v ?? '', username: username),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -80,9 +105,18 @@ class _ChangePasswordDialogState extends ConsumerState<_ChangePasswordDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        widget.forced
+            ? TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  ref.read(sessionControllerProvider.notifier).logout();
+                },
+                child: const Text('Sair'),
+              )
+            : TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
         FilledButton(onPressed: _saving ? null : _save, child: const Text('Trocar senha')),
       ],
+      ),
     );
   }
 }

@@ -16,6 +16,7 @@ class ApiException implements Exception {
     'LICENCA_EXPIRADA',
     'USUARIO_INATIVO',
     'USUARIO_INEXISTENTE',
+    'SESSAO_ENCERRADA',
   };
 
   bool get endsSession => code != null && sessionKillers.contains(code);

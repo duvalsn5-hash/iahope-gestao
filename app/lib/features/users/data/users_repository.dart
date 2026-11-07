@@ -40,8 +40,12 @@ class UsersRepository {
     required bool isActive,
     double commissionPct = 0,
     String? newPassword,
+    bool unlock = false,
+    bool resetTotp = false,
   }) =>
       apiCall(() => _dio.put('/users/$id', data: {
+            'unlock': unlock,
+            'resetTotp': resetTotp,
             'fullName': fullName,
             'email': email,
             'role': roleToApi(role),
@@ -50,6 +54,9 @@ class UsersRepository {
             'newPassword': newPassword,
           }));
 
-  Future<void> changeMyPassword(String current, String next) =>
-      apiCall(() => _dio.put('/users/me/password', data: {'current': current, 'next': next}));
+  /// Troca a própria senha → token novo (as outras sessões caem).
+  Future<String> changeMyPassword(String current, String next) => apiCall(() async {
+        final r = await _dio.put('/users/me/password', data: {'current': current, 'next': next});
+        return r.data['token'] as String;
+      });
 }

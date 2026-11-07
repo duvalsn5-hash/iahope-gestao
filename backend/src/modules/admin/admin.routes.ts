@@ -5,6 +5,7 @@ import { ALL_MODULES, db, requireAuth, requireRole } from '../../middleware/auth
 import { HttpError } from '../../middleware/errors';
 import { isValidCnpj, onlyDigits } from '../../utils/cnpj';
 import { absoluteUrl } from '../auth/auth.routes';
+import { assertStrongPassword } from '../../security/password';
 
 /**
  * Módulo Administração Master — exclusivo do perfil SUPER_ADMIN.
@@ -94,6 +95,7 @@ const createSchema = z.object({
 /** POST /admin/tenants — cria cliente + usuário ADMIN inicial */
 adminRouter.post('/tenants', async (req, res) => {
   const b = createSchema.parse(req.body);
+  assertStrongPassword(b.admin.password, b.admin.username);
   const hash = await bcrypt.hash(b.admin.password, 10);
   const tenant = await db(req, async (c) => {
     const t = (
@@ -104,8 +106,8 @@ adminRouter.post('/tenants', async (req, res) => {
       )
     ).rows[0];
     await c.query(
-      `INSERT INTO app.users (tenant_id, username, full_name, password_hash, role)
-       VALUES ($1, $2, $3, $4, 'ADMIN')`,
+      `INSERT INTO app.users (tenant_id, username, full_name, password_hash, role, must_change_password)
+       VALUES ($1, $2, $3, $4, 'ADMIN', true)`,
       [t.id, b.admin.username, b.admin.fullName, hash],
     );
     await c.query(`INSERT INTO app.audit_log (tenant_id, user_id, action, details) VALUES ($1, $2, 'TENANT_CRIADO', $3)`, [

@@ -5,6 +5,7 @@ import { db, requireAuth, requireModule, requireRole } from '../../middleware/au
 import { HttpError } from '../../middleware/errors';
 import { absoluteUrl } from '../auth/auth.routes';
 import { mapPartner } from '../partners/partners.routes';
+import { audit } from '../../security/audit';
 
 /**
  * Módulo MODA (loja de roupas e calçados): grade de tamanho × cor,
@@ -253,8 +254,8 @@ const returnSchema = z.object({
 /** POST /fashion/returns — troca/devolução: estoque volta; gera vale-troca ou devolve em dinheiro */
 fashionRouter.post('/returns', requireRole(...COUNTER), async (req, res) => {
   const b = returnSchema.parse(req.body);
-  const r = await db(req, async (c) =>
-    (
+  const r = await db(req, async (c) => {
+    const out = (
       await c.query('SELECT app.return_sale_items($1, $2::jsonb, $3, $4, $5, $6) AS r', [
         b.saleId,
         JSON.stringify(b.items.map((i) => ({ sale_item_id: i.saleItemId, qty: i.qty }))),
@@ -263,8 +264,12 @@ fashionRouter.post('/returns', requireRole(...COUNTER), async (req, res) => {
         b.reason ?? null,
         b.validDays,
       ])
-    ).rows[0].r,
-  );
+    ).rows[0].r;
+    await audit(c, out.mode === 'VALE' ? 'TROCA_VALE' : 'DEVOLUCAO_DINHEIRO', {
+      venda: out.saleNumber, valor: Number(out.amount), vale: out.code ?? null, motivo: b.reason ?? null,
+    });
+    return out;
+  });
   res.status(201).json({ ...r, amount: Number(r.amount) });
 });
 

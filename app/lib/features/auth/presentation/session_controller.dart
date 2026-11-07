@@ -26,8 +26,17 @@ class SessionController extends Notifier<Session?> {
     }
   }
 
-  Future<void> login({required String cnpj, required String username, required String password}) async {
-    final session = await ref.read(authRepositoryProvider).login(cnpj: cnpj, username: username, password: password);
+  /// Devolve o ticket quando a conta pede o código de 2 etapas (null = já entrou).
+  Future<String?> login({required String cnpj, required String username, required String password}) async {
+    final r = await ref.read(authRepositoryProvider).login(cnpj: cnpj, username: username, password: password);
+    if (r.ticket != null) return r.ticket;
+    await _start(r.session!);
+    return null;
+  }
+
+  Future<void> loginTotp(String ticket, String code) async => _start(await ref.read(authRepositoryProvider).loginTotp(ticket, code));
+
+  Future<void> _start(Session session) async {
     final storage = ref.read(sessionStorageProvider);
     await storage.saveSession(session.toJson());
     await storage.saveLastCnpj(session.tenant.cnpj);
@@ -45,6 +54,14 @@ class SessionController extends Notifier<Session?> {
     } catch (_) {
       // erros de sessão já chamam expire() via interceptor; falha de rede mantém offline
     }
+  }
+
+  /// Token novo (troca de senha, 2 etapas) e ajustes do usuário.
+  Future<void> replaceToken(String token, {bool? mustChangePassword, bool? totpEnabled}) async {
+    final s = state;
+    if (s == null) return;
+    state = s.copyWith(token: token, user: s.user.copyWith(mustChangePassword: mustChangePassword, totpEnabled: totpEnabled));
+    await ref.read(sessionStorageProvider).saveSession(state!.toJson());
   }
 
   /// Atualiza só a parte de marca (após upload da logo).

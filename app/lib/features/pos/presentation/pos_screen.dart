@@ -6,7 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../../core/network/api_exception.dart';
+import '../../auth/domain/session.dart';
 import '../../auth/presentation/session_controller.dart';
+import '../../auth/presentation/supervisor_dialog.dart';
 import '../../cash/domain/cash.dart';
 import '../../cash/presentation/cash_controller.dart';
 import '../../cash/presentation/cash_dialogs.dart';
@@ -44,6 +47,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   List<Product> _choices = const [];
   int _choiceIndex = 0;
   bool _busy = false;
+
+  /// Autorização do gerente para o desconto desta venda (vale 3 min no servidor).
+  String? _supToken;
 
   @override
   void initState() {
@@ -153,8 +159,27 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       _focusSearch();
       return;
     }
-    final v = await _askNumber('Desconto (R\$) — subtotal ${money(s.subtotal)}', s.discount, money: true);
-    if (v != null) _pos.setDiscount(v);
+    final session = ref.read(sessionControllerProvider);
+    final limit = session?.tenant.maxDiscountPct ?? 10;
+    final v = await _askNumber('Desconto (R\$) — subtotal ${money(s.subtotal)} · até ${number(limit)}% sem gerente', s.discount, money: true);
+    if (v == null) {
+      _focusSearch();
+      return;
+    }
+    // caixa passando do limite: pede o gerente na hora (a autorização vale 3 minutos)
+    if (session?.user.role == UserRole.caixa && s.subtotal > 0 && v / s.subtotal * 100 > limit + 0.001 && mounted) {
+      final token = await askSupervisor(
+        context,
+        action: 'DESCONTO',
+        reason: 'Desconto de ${money(v)} (${number(v / s.subtotal * 100)}%) passa do limite de ${number(limit)}%.',
+      );
+      if (token == null) {
+        _focusSearch();
+        return;
+      }
+      _supToken = token;
+    }
+    _pos.setDiscount(v);
     _focusSearch();
   }
 
@@ -208,7 +233,18 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     }
     setState(() => _busy = true);
     try {
-      final receipt = await _pos.finish(result.payments, dueDays: result.dueDays);
+      Receipt receipt;
+      try {
+        receipt = await _pos.finish(result.payments, dueDays: result.dueDays, supervisorToken: _supToken);
+      } on ApiException catch (e) {
+        if (e.code != 'PRECISA_GERENTE' || !mounted) rethrow;
+        // desconto acima do limite: o gerente autoriza e a venda segue
+        final token = await askSupervisor(context, action: 'DESCONTO', reason: e.message);
+        if (token == null) rethrow;
+        _supToken = token;
+        receipt = await _pos.finish(result.payments, dueDays: result.dueDays, supervisorToken: token);
+      }
+      _supToken = null;
       if (!mounted) return;
       await showDialog<void>(context: context, builder: (_) => ReceiptDialog(receipt: receipt));
     } catch (e) {

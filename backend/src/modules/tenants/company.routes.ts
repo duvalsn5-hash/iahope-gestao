@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db, requireAuth, requireRole } from '../../middleware/auth';
 import { HttpError } from '../../middleware/errors';
 import { absoluteUrl } from '../auth/auth.routes';
+import { audit } from '../../security/audit';
 import { LogoExt, logoStorage } from '../../storage/logo-storage';
 
 /**
@@ -115,4 +116,64 @@ companyRouter.patch('/', requireRole('ADMIN', 'SUPER_ADMIN'), async (req, res) =
     ).rows[0],
   );
   res.json({ nomeFantasia: t.nome_fantasia, primaryColor: t.primary_color });
+});
+
+/** PUT /company/security { maxDiscountPct } — regras de segurança da empresa */
+companyRouter.put('/security', requireRole('ADMIN'), async (req, res) => {
+  const b = z.object({ maxDiscountPct: z.number().min(0).max(100) }).parse(req.body);
+  await db(req, async (c) => {
+    await c.query('UPDATE app.tenants SET max_discount_pct = $2 WHERE id = $1', [req.auth!.tid, b.maxDiscountPct]);
+    await audit(c, 'LIMITE_DESCONTO', { percentual: b.maxDiscountPct });
+  });
+  res.json({ maxDiscountPct: b.maxDiscountPct });
+});
+
+const ACTIONS: Record<string, string> = {
+  LOGIN_OK: 'Entrou no sistema',
+  LOGIN_FALHA: 'Senha errada',
+  SAIR_DE_TODOS: 'Saiu de todos os aparelhos',
+  '2FA_LIGADA': 'Ligou a verificação em 2 etapas',
+  '2FA_DESLIGADA': 'Desligou a verificação em 2 etapas',
+  SENHA_ALTERADA: 'Trocou a própria senha',
+  USUARIO_CRIADO: 'Cadastrou usuário',
+  USUARIO_ALTERADO: 'Alterou usuário',
+  AUTORIZACAO_GERENTE: 'Gerente autorizou',
+  DESCONTO_ACIMA_LIMITE: 'Desconto acima do limite',
+  VENDA_CANCELADA: 'Cancelou venda',
+  TROCA_VALE: 'Troca com vale',
+  DEVOLUCAO_DINHEIRO: 'Devolução em dinheiro',
+  CAIXA_FECHADO: 'Fechou o caixa',
+  LIMITE_DESCONTO: 'Mudou o limite de desconto',
+  TENANT_CRIADO: 'Empresa criada (Master)',
+  TENANT_ATIVADO: 'Acesso reativado (Master)',
+  TENANT_BLOQUEADO: 'Acesso bloqueado (Master)',
+  TENANT_ATUALIZADO: 'Licença alterada (Master)',
+  TENANT_MODULOS: 'Módulos alterados (Master)',
+  RAMO_ALTERADO: 'Ramo alterado (Master)',
+};
+
+/** GET /company/audit?action=&days=30 — quem fez o quê (administrador e gerente) */
+companyRouter.get('/audit', requireRole('ADMIN', 'GERENTE'), async (req, res) => {
+  const action = String(req.query.action ?? '');
+  const days = Math.min(Math.max(Number(req.query.days ?? 30) || 30, 1), 365);
+  const rows = await db(req, async (c) =>
+    (
+      await c.query(
+        `SELECT a.id, a.action, a.details, a.created_at, u.full_name, u.username::text
+           FROM app.audit_log a LEFT JOIN app.users u ON u.id = a.user_id
+          WHERE a.tenant_id = $1 AND a.created_at >= now() - make_interval(days => $3)
+            AND ($2 = '' OR a.action = $2)
+          ORDER BY a.created_at DESC LIMIT 500`,
+        [req.auth!.tid, action, days],
+      )
+    ).rows,
+  );
+  res.json(rows.map((r: any) => ({
+    id: Number(r.id),
+    action: r.action,
+    label: ACTIONS[r.action] ?? r.action,
+    details: r.details ?? {},
+    user: r.full_name ?? r.username ?? null,
+    at: r.created_at,
+  })));
 });

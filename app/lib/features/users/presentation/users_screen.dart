@@ -7,6 +7,7 @@ import '../../../core/widgets/common_widgets.dart';
 import '../../auth/domain/session.dart';
 import '../../auth/presentation/session_controller.dart';
 import '../data/users_repository.dart';
+import 'change_password_dialog.dart';
 import '../domain/app_user.dart';
 
 final usersPageProvider = FutureProvider.autoDispose<UsersPage>((ref) => ref.read(usersRepositoryProvider).list());
@@ -76,6 +77,9 @@ class UsersScreen extends ConsumerWidget {
                           if (u.username != null) 'usuário: ${u.username}',
                           if (u.role == UserRole.mecanico && u.commissionPct > 0) 'comissão ${number(u.commissionPct)}%',
                           u.lastLoginAt == null ? 'nunca entrou' : 'último acesso ${dateTimeBr(u.lastLoginAt)}',
+                          if (u.locked) '🔒 BLOQUEADO por senha errada',
+                          if (u.totpEnabled) '2 etapas ligada',
+                          if (u.mustChangePassword) 'senha provisória',
                         ].join(' · ')),
                         trailing: u.isActive ? const Icon(Icons.chevron_right) : const Text('inativo'),
                       );
@@ -109,6 +113,8 @@ class _UserDialogState extends ConsumerState<_UserDialog> {
       text: (widget.user?.commissionPct ?? 0) == 0 ? '' : number(widget.user!.commissionPct));
   late UserRole _role = widget.user?.role ?? UserRole.caixa;
   late bool _active = widget.user?.isActive ?? true;
+  bool _unlock = false;
+  bool _resetTotp = false;
   bool _saving = false;
 
   bool get _isNew => widget.user == null;
@@ -146,6 +152,8 @@ class _UserDialogState extends ConsumerState<_UserDialog> {
           isActive: _active,
           commissionPct: pct,
           newPassword: _password.text.isEmpty ? null : _password.text,
+          unlock: _unlock,
+          resetTotp: _resetTotp,
         );
       }
       if (mounted) Navigator.pop(context, true);
@@ -206,12 +214,14 @@ class _UserDialogState extends ConsumerState<_UserDialog> {
               TextFormField(
                 controller: _password,
                 obscureText: true,
-                decoration: InputDecoration(labelText: _isNew ? 'Senha inicial' : 'Nova senha (deixe vazio para manter)'),
+                decoration: InputDecoration(
+                  labelText: _isNew ? 'Senha provisória' : 'Nova senha provisória (vazio = manter)',
+                  helperText: 'A pessoa troca no 1º acesso. 8+ caracteres, letras e números.',
+                ),
                 validator: (v) {
                   final s = v ?? '';
-                  if (_isNew && s.length < 8) return 'Mínimo 8 caracteres';
-                  if (!_isNew && s.isNotEmpty && s.length < 8) return 'Mínimo 8 caracteres';
-                  return null;
+                  if (!_isNew && s.isEmpty) return null;
+                  return passwordProblem(s, username: _username.text.trim());
                 },
               ),
               gap,
@@ -227,6 +237,22 @@ class _UserDialogState extends ConsumerState<_UserDialog> {
                   subtitle: const Text('Inativo não consegue entrar e não conta no limite do plano'),
                   value: _active,
                   onChanged: (v) => setState(() => _active = v),
+                ),
+              if (!_isNew && widget.user!.locked)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _unlock,
+                  title: const Text('Desbloquear agora'),
+                  subtitle: const Text('Bloqueado por 5 senhas erradas. Confirme que foi a própria pessoa.'),
+                  onChanged: (v) => setState(() => _unlock = v ?? false),
+                ),
+              if (!_isNew && widget.user!.totpEnabled)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _resetTotp,
+                  title: const Text('Zerar verificação em 2 etapas'),
+                  subtitle: const Text('Use se a pessoa perdeu ou trocou o celular. Ela liga de novo depois.'),
+                  onChanged: (v) => setState(() => _resetTotp = v ?? false),
                 ),
             ]),
           ),

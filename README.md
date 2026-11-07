@@ -80,6 +80,7 @@ gestao-iahope/
 │   ├── 04_oficina.sql       # oficina de moto (motos, OS, mão de obra, comissões), mecânico, fotos de produto
 │   ├── 05_categorias.sql    # categoria de negócio da empresa + categoria de produto
 │   ├── 06_moda_estamparia.sql # loja de roupas (grade, trocas/vale, condicional) + estamparia (pedidos)
+│   ├── 07_seguranca.sql     # bloqueio por senha errada, 2 etapas, sessões, gerente no PDV, auditoria
 │   └── 99_rls_tests.sql     # 23 testes de isolamento (rodar como app_api, em banco de teste)
 ├── docs/                    # DEPLOY_GRATIS.md · MIGRAR_PARA_HOSTING.md
 ├── deploy/vps/              # produção em VPS: Caddy (HTTPS) + API + Postgres
@@ -145,6 +146,7 @@ psql -U postgres -d gestao -f database/03_fase1.sql
 psql -U postgres -d gestao -f database/04_oficina.sql
 psql -U postgres -d gestao -f database/05_categorias.sql
 psql -U postgres -d gestao -f database/06_moda_estamparia.sql
+psql -U postgres -d gestao -f database/07_seguranca.sql
 # testes de isolamento — SÓ em banco de teste (devem terminar em "Todos os testes de RLS passaram.")
 psql -U app_api -d gestao -f database/99_rls_tests.sql
 ```
@@ -311,3 +313,20 @@ F5, F11 e F12 ficam livres de propósito (o navegador usa para recarregar, tela 
 ---
 
 **Desenvolvido por Edivaldo.Nascimento - IaHope-Technology**
+
+## Camadas de segurança
+
+| Camada | Onde | O que faz |
+|---|---|---|
+| Isolamento por CNPJ | PostgreSQL (RLS) | cada empresa só lê/grava as próprias linhas; a API conecta como `app_api` (sem bypass) |
+| Senha forte | API + app | 8+ caracteres, letras e números, sem o nome de usuário, sem senhas óbvias |
+| Senha provisória | API | usuário criado pelo administrador/Master é obrigado a trocar no 1º acesso |
+| Bloqueio por tentativas | banco | 5 senhas erradas → bloqueio de 15 min (o administrador pode liberar) |
+| Verificação em 2 etapas | API + app | código TOTP (Google/Microsoft Authenticator); recomendada para o Master |
+| Sessões | API | token com versão: trocar senha, mudar perfil ou "sair de todos" derruba os logins abertos |
+| Bloqueio da empresa | API | a cada requisição confere empresa ativa, licença e usuário |
+| Autorização do gerente | API + PDV | desconto acima do limite e cancelamento de venda pelo caixa exigem usuário e senha do gerente (3 min) |
+| Auditoria | banco | logins, senhas erradas, cancelamentos, trocas, descontos, caixa; o `app_api` não apaga nem altera |
+| Inatividade | app | sai sozinho após 30 min sem uso |
+| Rede | API | HTTPS (HSTS), CORS só para o app web, limite de requisições por IP, `Cache-Control: no-store` |
+| Banco | Postgres | `statement_timeout`, `lock_timeout` e `idle_in_transaction_session_timeout` para o `app_api` |

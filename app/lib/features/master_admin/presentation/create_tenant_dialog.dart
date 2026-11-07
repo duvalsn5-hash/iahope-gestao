@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/business/business_category.dart';
 import '../../../core/business/business_category_picker.dart';
 import '../../../core/utils/formatters.dart';
+import '../../users/presentation/change_password_dialog.dart';
 import '../domain/tenant.dart';
 
 /// Cadastro de novo cliente + usuário ADMIN inicial.
@@ -150,8 +151,11 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
               TextFormField(
                 controller: _adminPass,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: 'Senha inicial (mín. 8)'),
-                validator: (v) => (v ?? '').length < 8 ? 'Mínimo 8 caracteres' : null,
+                decoration: const InputDecoration(
+                  labelText: 'Senha provisória',
+                  helperText: '8+ caracteres, letras e números. O cliente cria a dele no 1º acesso.',
+                ),
+                validator: (v) => passwordProblem(v ?? '', username: _adminUser.text.trim()),
                 onFieldSubmitted: (_) => _save(),
               ),
             ]),

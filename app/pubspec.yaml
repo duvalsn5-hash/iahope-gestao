@@ -23,6 +23,7 @@ dependencies:
   printing: ^5.13.4             # impressão/compartilhamento do cupom
   image: ^4.3.0                 # reduz a foto do produto antes de enviar
   url_launcher: ^6.3.0          # abrir WhatsApp com orçamento/lembrete
+  barcode: any                  # QR Code da verificação em 2 etapas (já vem com o pdf)
 
 dev_dependencies:
   flutter_test:
