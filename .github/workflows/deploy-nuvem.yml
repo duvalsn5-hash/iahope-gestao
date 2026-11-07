@@ -282,7 +282,7 @@ jobs:
         run: |
           set -euo pipefail
           BODY=$(jq -n --arg p "$MASTER_PASSWORD" '{cnpj:"11222333000181", username:"master", password:$p}')
-          OK=$(curl -s -X POST "$API_URL_FINAL/auth/login" -H 'Content-Type: application/json' -d "$BODY" | jq -r 'if .token then "ok" else .message end')
+          OK=$(curl -s -X POST "$API_URL_FINAL/auth/login" -H 'Content-Type: application/json' -d "$BODY" | jq -r 'if .token or .needsTotp then "ok" else .message end')
           [ "$OK" = "ok" ] || { echo "::error::Login do master falhou: $OK"; exit 1; }
           echo "Login do master funcionando ✓"
 
