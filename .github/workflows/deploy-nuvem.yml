@@ -187,7 +187,7 @@ jobs:
           # Só o master da plataforma (e só se a senha mudou, para não derrubar a sessão à toa)
           # e as contas da demonstração que ninguém trocou ainda. Contas de clientes NUNCA são tocadas.
           cat <<'SQL' | q -v pw="$MASTER_PASSWORD"
-          UPDATE app.users u SET password_hash = crypt(:'pw', gen_salt('bf', 10))
+          UPDATE app.users u SET password_hash = crypt(:'pw', gen_salt('bf', 10)), failed_logins = 0, locked_until = NULL
             FROM app.tenants t
            WHERE t.id = u.tenant_id AND t.cnpj = '11222333000181' AND u.username = 'master'
              AND CASE WHEN u.password_hash LIKE '$2a$%' THEN u.password_hash <> crypt(:'pw', u.password_hash) ELSE true END;
