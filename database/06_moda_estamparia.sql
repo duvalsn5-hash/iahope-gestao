@@ -13,6 +13,8 @@ ALTER TYPE app.payment_method ADD VALUE IF NOT EXISTS 'SINAL';  -- sinal já rec
 
 BEGIN;
 SET search_path = app, public;
+-- script de manutenção roda como Master (libera ligar módulos nas empresas do ramo)
+SELECT set_config('app.role', 'SUPER_ADMIN', true);
 
 -- -----------------------------------------------------------------------------
 --  Módulos MODA e ESTAMPARIA
