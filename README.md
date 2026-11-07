@@ -79,7 +79,8 @@ gestao-iahope/
 │   ├── 03_fase1.sql         # módulos, clientes/fornecedores, caixa, financeiro, compras XML, balança
 │   ├── 04_oficina.sql       # oficina de moto (motos, OS, mão de obra, comissões), mecânico, fotos de produto
 │   ├── 05_categorias.sql    # categoria de negócio da empresa + categoria de produto
-│   └── 99_rls_tests.sql     # 19 testes de isolamento (rodar como app_api, em banco de teste)
+│   ├── 06_moda_estamparia.sql # loja de roupas (grade, trocas/vale, condicional) + estamparia (pedidos)
+│   └── 99_rls_tests.sql     # 23 testes de isolamento (rodar como app_api, em banco de teste)
 ├── docs/                    # DEPLOY_GRATIS.md · MIGRAR_PARA_HOSTING.md
 ├── deploy/vps/              # produção em VPS: Caddy (HTTPS) + API + Postgres
 ├── render.yaml              # API no Render (plano Free) em 1 clique
@@ -143,6 +144,7 @@ psql -U postgres -d gestao -f database/02_seed.sql
 psql -U postgres -d gestao -f database/03_fase1.sql
 psql -U postgres -d gestao -f database/04_oficina.sql
 psql -U postgres -d gestao -f database/05_categorias.sql
+psql -U postgres -d gestao -f database/06_moda_estamparia.sql
 # testes de isolamento — SÓ em banco de teste (devem terminar em "Todos os testes de RLS passaram.")
 psql -U app_api -d gestao -f database/99_rls_tests.sql
 ```

@@ -28,7 +28,7 @@ jobs:
         run: |
           psql -U postgres -c "CREATE ROLE neondb_owner LOGIN PASSWORD 'owner' CREATEROLE CREATEDB"
           psql -U postgres -c "CREATE DATABASE neondb OWNER neondb_owner"
-          for f in 00_roles 01_schema 02_seed 03_fase1 04_oficina 05_categorias; do
+          for f in 00_roles 01_schema 02_seed 03_fase1 04_oficina 05_categorias 06_moda_estamparia; do
             PGPASSWORD=owner psql -U neondb_owner -d neondb -v ON_ERROR_STOP=1 -q -f database/$f.sql
           done
       - name: Testes de isolamento (RLS) como app_api
