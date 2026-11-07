@@ -12,8 +12,9 @@ posRouter.use(requireAuth, requireModule('PDV'));
 const closeSchema = z.object({
   items: z.array(z.object({ productId: z.string().uuid(), qty: z.number().positive() })).min(1),
   payments: z.array(z.object({
-    method: z.enum(['DINHEIRO', 'PIX', 'DEBITO', 'CREDITO', 'OUTROS', 'PRAZO']),
+    method: z.enum(['DINHEIRO', 'PIX', 'DEBITO', 'CREDITO', 'OUTROS', 'PRAZO', 'VALE']),
     amount: z.number().positive(),
+    voucher: z.string().trim().max(20).optional(), // código do vale-troca (method VALE)
   })).min(1),
   discount: z.number().min(0).default(0),
   customerDoc: z.string().optional(),
@@ -21,7 +22,7 @@ const closeSchema = z.object({
   dueDays: z.number().int().min(0).max(365).default(30), // vencimento da venda a prazo
 });
 
-async function loadReceipt(c: any, saleId: string) {
+export async function loadReceipt(c: any, saleId: string) {
   const sale = (
     await c.query(
       `SELECT s.*, u.full_name AS cashier_name, t.razao_social, t.nome_fantasia, t.cnpj, t.logo_url,
@@ -91,6 +92,29 @@ posRouter.get('/sales/:id', async (req, res) => {
 posRouter.post('/sales/:id/cancel', requireRole('ADMIN', 'GERENTE'), async (req, res) => {
   await db(req, (c) => c.query('SELECT app.cancel_sale($1)', [req.params.id]));
   res.json({ ok: true });
+});
+
+/** GET /pos/vouchers/:code — confere saldo do vale-troca antes de usar */
+posRouter.get('/vouchers/:code', async (req, res) => {
+  const v = await db(req, async (c) =>
+    (
+      await c.query(
+        `SELECT s.code, s.amount, s.balance, s.expires_at, p.name AS customer_name
+           FROM app.store_credits s LEFT JOIN app.partners p ON p.id = s.customer_id
+          WHERE upper(s.code) = upper($1)`,
+        [String(req.params.code).trim()],
+      )
+    ).rows[0],
+  );
+  if (!v) throw new HttpError(404, 'VALE_NAO_ENCONTRADO', 'Vale-troca não encontrado');
+  res.json({
+    code: v.code,
+    amount: Number(v.amount),
+    balance: Number(v.balance),
+    expiresAt: v.expires_at,
+    expired: v.expires_at != null && String(v.expires_at) < new Date().toISOString().slice(0, 10),
+    customerName: v.customer_name,
+  });
 });
 
 /** GET /pos/summary — resumo do dia para o caixa */

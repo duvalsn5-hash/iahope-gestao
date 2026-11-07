@@ -22,6 +22,9 @@ const map = (p: any) => ({
   minStock: Number(p.min_stock),
   scaleCode: p.scale_code ?? null,
   category: p.category ?? null,
+  gradeId: p.grade_id ?? null,
+  size: p.size ?? null,
+  color: p.color ?? null,
   imageUrl: absoluteUrl(p.image_url),
   isActive: p.is_active,
 });

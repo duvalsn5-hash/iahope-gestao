@@ -22,6 +22,8 @@ class _NavItem {
 const _allItems = [
   _NavItem(Routes.pos, 'PDV', Icons.point_of_sale, SingleActivator(LogicalKeyboardKey.f2), 'F2'),
   _NavItem(Routes.workshop, 'Oficina', Icons.two_wheeler, SingleActivator(LogicalKeyboardKey.keyO, alt: true), 'Alt+O'),
+  _NavItem(Routes.fashion, 'Loja (grade e trocas)', Icons.checkroom_outlined, SingleActivator(LogicalKeyboardKey.keyL, alt: true), 'Alt+L'),
+  _NavItem(Routes.printshop, 'Estamparia', Icons.format_paint_outlined, SingleActivator(LogicalKeyboardKey.keyE, alt: true), 'Alt+E'),
   _NavItem(Routes.productivity, 'Produtividade', Icons.local_shipping, SingleActivator(LogicalKeyboardKey.f3), 'F3'),
   _NavItem(Routes.products, 'Produtos', Icons.inventory_2_outlined, SingleActivator(LogicalKeyboardKey.keyP, alt: true), 'Alt+P'),
   _NavItem(Routes.partners, 'Clientes e fornecedores', Icons.contacts_outlined,

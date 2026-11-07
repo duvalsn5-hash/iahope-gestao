@@ -39,4 +39,11 @@ class PosRepository {
           nextNumber: (r.data['nextNumber'] as num? ?? 0).toInt(),
         );
       });
+
+  /// Confere o vale-troca (código e saldo). Vencido = sem saldo.
+  Future<VoucherInfo?> voucher(String code) => apiCall(() async {
+        final r = await _dio.get('/pos/vouchers/${Uri.encodeComponent(code.trim())}');
+        final expired = r.data['expired'] == true;
+        return (code: r.data['code'] as String, balance: expired ? 0.0 : (r.data['balance'] as num).toDouble());
+      });
 }

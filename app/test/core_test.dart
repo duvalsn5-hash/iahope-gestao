@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iahope_gestao/core/business/business_category.dart';
 import 'package:iahope_gestao/core/utils/formatters.dart';
+import 'package:iahope_gestao/features/fashion/domain/fashion.dart';
 import 'package:iahope_gestao/features/pos/domain/pos_models.dart';
+import 'package:iahope_gestao/features/printshop/domain/printshop.dart';
 import 'package:iahope_gestao/features/products/domain/product.dart';
 import 'package:iahope_gestao/features/workshop/domain/workshop.dart';
 
@@ -48,5 +50,29 @@ void main() {
     expect(businessCategoryOf('MERCADINHO').modules, contains('BALANCA'));
     expect(businessCategoryOf('xyz').code, 'OUTRO');
     expect(kBusinessCategories.map((c) => c.code).toSet().length, kBusinessCategories.length);
+  });
+
+  test('estamparia: grade de tamanhos soma a quantidade e o fluxo do quadro', () {
+    final it = OrderItem(description: 'Camiseta DTF', sizes: {'P': 5, 'M': 10, 'G': 5}, unitPrice: 30);
+    expect(it.effectiveQty, 20);
+    expect(it.total, 600);
+    expect(OrderItem(description: 'Caneca', qty: 12, unitPrice: 25).total, 300);
+    expect(OrderStatus.orcamento.next, OrderStatus.aprovado);
+    expect(OrderStatus.pronto.next, isNull);
+    expect(techniqueLabel('SUBLIMACAO'), 'Sublimação');
+  });
+
+  test('loja: grade encontra a combinação e vale-troca no pagamento', () {
+    final g = GradeModel.fromJson({
+      'gradeId': 'g1', 'model': 'Camiseta', 'price': 49.9, 'cost': 20, 'sizes': ['P', 'M'], 'colors': ['Preta'],
+      'totalStock': 3,
+      'variants': [
+        {'id': 'a', 'sku': 'C-P', 'name': 'Camiseta Preta P', 'price': 49.9, 'stockQty': 1, 'size': 'P', 'color': 'Preta'},
+        {'id': 'b', 'sku': 'C-M', 'name': 'Camiseta Preta M', 'price': 49.9, 'stockQty': 2, 'size': 'M', 'color': 'Preta'},
+      ],
+    });
+    expect(g.variant('Preta', 'M')?.id, 'b');
+    expect(g.variant('Branca', 'M'), isNull);
+    expect(const Payment(PaymentMethod.vale, 30, voucher: 'VT000001').toJson(), {'method': 'VALE', 'amount': 30, 'voucher': 'VT000001'});
   });
 }

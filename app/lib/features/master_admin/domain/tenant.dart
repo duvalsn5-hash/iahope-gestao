@@ -120,5 +120,7 @@ const kModules = [
   ('COMPRAS', 'Compras por XML', 'Entrada de NF-e com estoque, custo e duplicatas'),
   ('BALANCA', 'Balança', 'Leitura de etiqueta de balança no PDV'),
   ('OFICINA', 'Oficina de motos', 'Ordens de serviço, motos, mão de obra, comissões e revisões'),
+  ('MODA', 'Loja de roupas', 'Grade de tamanho e cor, etiquetas, trocas com vale e condicional'),
+  ('ESTAMPARIA', 'Estamparia e personalizados', 'Pedidos sob encomenda com arte, sinal, prazo e produção'),
 ];
 

@@ -115,6 +115,13 @@ class PosController extends Notifier<PosState> {
 
   void clear() => state = const PosState();
 
+  /// Carrega uma venda pronta (ex.: o que a cliente ficou da condicional).
+  void loadCart(List<(Product, double)> items, {Partner? customer}) => state = PosState(
+        items: [for (final (p, q) in items) CartItem(product: p, qty: q)],
+        customer: customer,
+        selected: items.isEmpty ? null : 0,
+      );
+
   Future<Receipt> finish(List<Payment> payments, {int dueDays = 30}) async {
     final receipt = await ref.read(posRepositoryProvider).closeSale(
           items: state.items,

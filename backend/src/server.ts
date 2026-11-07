@@ -21,6 +21,8 @@ import { financeRouter } from './modules/finance/finance.routes';
 import { purchasesRouter } from './modules/purchases/purchases.routes';
 import { usersRouter } from './modules/users/users.routes';
 import { workshopRouter } from './modules/workshop/workshop.routes';
+import { fashionRouter } from './modules/fashion/fashion.routes';
+import { printshopRouter } from './modules/printshop/printshop.routes';
 import { assertSafeDbRole } from './db/safety';
 
 export const app = express();
@@ -50,6 +52,8 @@ app.use('/finance', financeRouter);
 app.use('/purchases', purchasesRouter);
 app.use('/users', usersRouter);
 app.use('/workshop', workshopRouter);
+app.use('/fashion', fashionRouter);
+app.use('/printshop', printshopRouter);
 
 app.use(errorHandler);
 

@@ -353,6 +353,150 @@ DO $$ BEGIN
 END $$;
 ROLLBACK;
 
+-- ================================================================ LOJA DE ROUPAS
+-- ---------------------------------------------------------------- 13. troca com vale e uso do vale
+BEGIN;
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ DECLARE cid uuid; pm uuid; pg uuid; sale uuid; sale2 uuid; r jsonb; it bigint; vcode text; e1 text; e2 text; BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  PERFORM set_config('app.user_id', (SELECT u.user_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  e1 := app.next_internal_ean(); e2 := app.next_internal_ean();
+  ASSERT length(e1) = 13 AND e1 LIKE '29%' AND e1 <> e2, 'EAN interno inválido';
+  INSERT INTO app.partners (kind, name) VALUES ('CLIENTE', 'Maria Cliente') RETURNING id INTO cid;
+  INSERT INTO app.products (sku, barcode, name, price, stock_qty, size, color, grade_model)
+    VALUES ('CAM-PRE-M', e1, 'Camiseta Preta M', 50, 5, 'M', 'Preta', 'Camiseta') RETURNING id INTO pm;
+  INSERT INTO app.products (sku, barcode, name, price, stock_qty, size, color, grade_model)
+    VALUES ('CAM-PRE-G', e2, 'Camiseta Preta G', 50, 5, 'G', 'Preta', 'Camiseta') RETURNING id INTO pg;
+  PERFORM app.open_cash_session(0);
+  -- venda de 2 camisetas M com R$ 10 de desconto = R$ 90
+  sale := app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pm, 'qty', 2)),
+                         '[{"method":"PIX","amount":90}]', 10, NULL, false, cid);
+  SELECT id INTO it FROM app.sale_items WHERE sale_id = sale;
+  -- troca de 1 peça: vale de R$ 45 (desconto rateado), estoque volta
+  r := app.return_sale_items(sale, jsonb_build_array(jsonb_build_object('sale_item_id', it, 'qty', 1)), 'VALE', NULL, 'tamanho');
+  vcode := r->>'code';
+  ASSERT (r->>'amount')::numeric = 45, format('vale deveria ser 45, foi %s', r->>'amount');
+  ASSERT (SELECT stock_qty FROM app.products WHERE id = pm) = 4, 'troca não devolveu ao estoque';
+  BEGIN
+    PERFORM app.return_sale_items(sale, jsonb_build_array(jsonb_build_object('sale_item_id', it, 'qty', 2)), 'VALE');
+    RAISE EXCEPTION 'FALHA: devolveu mais do que vendeu';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  BEGIN
+    PERFORM app.cancel_sale(sale);
+    RAISE EXCEPTION 'FALHA: cancelou venda que já teve troca';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  -- leva a G usando o vale (45) + 5 em dinheiro
+  sale2 := app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pg, 'qty', 1)),
+                          jsonb_build_array(jsonb_build_object('method','VALE','amount',45,'voucher',lower(vcode)),
+                                            jsonb_build_object('method','DINHEIRO','amount',5)));
+  ASSERT (SELECT balance FROM app.store_credits s WHERE s.code = vcode) = 0, 'vale não foi abatido';
+  BEGIN
+    PERFORM app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pg, 'qty', 1)),
+                           jsonb_build_array(jsonb_build_object('method','VALE','amount',50,'voucher',vcode)));
+    RAISE EXCEPTION 'FALHA: usou vale sem saldo';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  BEGIN
+    PERFORM app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pg, 'qty', 1)), '[{"method":"VALE","amount":50}]');
+    RAISE EXCEPTION 'FALHA: aceitou VALE sem código';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  -- cancelar a venda que usou o vale devolve o saldo
+  PERFORM app.cancel_sale(sale2);
+  ASSERT (SELECT balance FROM app.store_credits s WHERE s.code = vcode) = 45, 'cancelamento não devolveu o vale';
+  -- devolução em dinheiro sai da gaveta (reforço de 100 → sobram 55)
+  PERFORM app.cash_movement('SUPRIMENTO', 100, 'troco');
+  r := app.return_sale_items(sale, jsonb_build_array(jsonb_build_object('sale_item_id', it, 'qty', 1)), 'DINHEIRO');
+  ASSERT (app.cash_summary(app.current_cash_session())->>'expectedCash')::numeric = 55, 'devolução em dinheiro errada';
+  RAISE NOTICE 'OK 13: grade com EAN interno, troca gera vale (R$ 45 com desconto rateado), vale paga venda, cancelamento devolve o vale';
+END $$;
+ROLLBACK;
+
+-- ---------------------------------------------------------------- 14. condicional
+BEGIN;
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ DECLARE cid uuid; p1 uuid; p2 uuid; c uuid; r jsonb; i1 bigint; i2 bigint; BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  PERFORM set_config('app.user_id', (SELECT u.user_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  INSERT INTO app.partners (kind, name) VALUES ('CLIENTE', 'Ana Condicional') RETURNING id INTO cid;
+  INSERT INTO app.products (sku, name, price, stock_qty) VALUES ('VEST-1', 'Vestido floral', 120, 3) RETURNING id INTO p1;
+  INSERT INTO app.products (sku, name, price, stock_qty) VALUES ('CALCA-1', 'Calça jeans', 150, 2) RETURNING id INTO p2;
+  c := app.open_consignment(cid, jsonb_build_array(jsonb_build_object('product_id', p1, 'qty', 2),
+                                                   jsonb_build_object('product_id', p2, 'qty', 1)), current_date + 3, NULL);
+  ASSERT (SELECT stock_qty FROM app.products WHERE id = p1) = 1, 'condicional não separou do estoque';
+  SELECT id INTO i1 FROM app.consignment_items WHERE consignment_id = c AND product_id = p1;
+  SELECT id INTO i2 FROM app.consignment_items WHERE consignment_id = c AND product_id = p2;
+  -- cliente devolve 1 vestido e fica com 1 vestido + a calça
+  r := app.close_consignment(c, jsonb_build_array(jsonb_build_object('item_id', i1, 'returned', 1),
+                                                  jsonb_build_object('item_id', i2, 'returned', 0)));
+  ASSERT jsonb_array_length(r->'kept') = 2, 'acerto deveria devolver 2 itens para vender';
+  ASSERT (SELECT stock_qty FROM app.products WHERE id = p1) = 3, 'acerto não voltou o estoque';
+  ASSERT (SELECT status FROM app.consignments WHERE id = c) = 'FECHADA', 'condicional não fechou';
+  RAISE NOTICE 'OK 14: condicional separa, acerta e devolve o que ficou para o PDV';
+END $$;
+ROLLBACK;
+
+-- ================================================================ ESTAMPARIA
+-- ---------------------------------------------------------------- 15. pedido com sinal
+BEGIN;
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ DECLARE cid uuid; pl uuid; o uuid; sale uuid; v jsonb; BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  PERFORM set_config('app.user_id', (SELECT u.user_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  INSERT INTO app.partners (kind, name) VALUES ('CLIENTE', 'Escola Futuro') RETURNING id INTO cid;
+  INSERT INTO app.products (sku, name, price, cost, stock_qty) VALUES ('LISA-BR', 'Camiseta lisa branca', 15, 9, 30) RETURNING id INTO pl;
+  INSERT INTO app.custom_orders (number, customer_id, title, technique, due_date)
+    VALUES (app.next_counter('pedido'), cid, 'Camisetas da formatura', 'DTF', current_date + 7) RETURNING id INTO o;
+  INSERT INTO app.custom_order_items (order_id, product_id, description, color, sizes, qty, unit_price, total)
+    VALUES (o, pl, 'Camiseta DTF frente', 'Branca', '{"P":5,"M":10,"G":5}', 20, 30, 600);
+  PERFORM app.open_cash_session(0);
+  PERFORM app.add_order_deposit(o, 300, 'DINHEIRO');
+  BEGIN
+    PERFORM app.add_order_deposit(o, 400, 'PIX');
+    RAISE EXCEPTION 'FALHA: sinal maior que o pedido';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  sale := app.close_custom_order(o, '[{"method":"PIX","amount":300}]');
+  ASSERT (SELECT total FROM app.sales WHERE id = sale) = 600, 'total do pedido errado';
+  ASSERT (SELECT amount FROM app.sale_payments WHERE sale_id = sale AND method::text = 'SINAL') = 300, 'sinal não entrou';
+  ASSERT (SELECT stock_qty FROM app.products WHERE id = pl) = 10, 'peças lisas não baixaram';
+  ASSERT (SELECT status FROM app.custom_orders WHERE id = o) = 'ENTREGUE', 'pedido não entregue';
+  v := app.cash_summary(app.current_cash_session());
+  ASSERT (v->>'expectedCash')::numeric = 300, format('gaveta deveria ter o sinal (300), tem %s', v->>'expectedCash');
+  PERFORM app.cancel_sale(sale);
+  ASSERT (SELECT status FROM app.custom_orders WHERE id = o) = 'PRONTO', 'cancelamento não reabriu o pedido';
+  BEGIN
+    sale := app.close_sale(jsonb_build_array(jsonb_build_object('product_id', pl, 'qty', 1)), '[{"method":"PIX","amount":15}]');
+    INSERT INTO app.sale_payments (sale_id, method, amount) VALUES (sale, 'SINAL', 1);
+    RAISE EXCEPTION 'FALHA: aceitou SINAL fora de pedido';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM LIKE 'FALHA%' THEN RAISE; END IF; END;
+  RAISE NOTICE 'OK 15: pedido de estamparia com sinal em dinheiro, entrega recebe o resto, peças baixam';
+END $$;
+ROLLBACK;
+
+-- ---------------------------------------------------------------- 16. isolamento das novas tabelas
+BEGIN;
+SELECT set_config('app.role', 'SUPER_ADMIN', true);
+SELECT set_config('app.tmp_b', (SELECT id::text FROM app.tenants WHERE cnpj = '45723174000110'), true);
+DO $$ DECLARE cid uuid; BEGIN
+  INSERT INTO app.partners (tenant_id, kind, name) VALUES (current_setting('app.tmp_b')::uuid, 'CLIENTE', 'Cliente B') RETURNING id INTO cid;
+  INSERT INTO app.custom_orders (tenant_id, number, customer_id, title) VALUES (current_setting('app.tmp_b')::uuid, 1, cid, 'Pedido secreto');
+  INSERT INTO app.store_credits (tenant_id, code, amount, balance) VALUES (current_setting('app.tmp_b')::uuid, 'VT000001', 99, 99);
+  INSERT INTO app.consignments (tenant_id, number, customer_id) VALUES (current_setting('app.tmp_b')::uuid, 1, cid);
+END $$;
+SELECT set_config('app.role', 'ADMIN', true);
+DO $$ BEGIN
+  PERFORM set_config('app.tenant_id', (SELECT u.tenant_id::text FROM app.auth_lookup('11444777000161','admin') u), true);
+  ASSERT (SELECT count(*) FROM app.custom_orders) = 0, 'vazou pedido de outra empresa';
+  ASSERT (SELECT count(*) FROM app.store_credits) = 0, 'vazou vale de outra empresa';
+  ASSERT (SELECT count(*) FROM app.consignments) = 0, 'vazou condicional de outra empresa';
+  -- toda tabela com tenant_id precisa de RLS ligado
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM information_schema.columns c JOIN pg_class k ON k.relname = c.table_name
+      JOIN pg_namespace n ON n.oid = k.relnamespace AND n.nspname = 'app'
+     WHERE c.table_schema = 'app' AND c.column_name = 'tenant_id' AND k.relkind = 'r' AND NOT k.relrowsecurity),
+    'há tabela com tenant_id sem RLS';
+  RAISE NOTICE 'OK 16: pedidos, vales e condicionais isolados; todas as tabelas com tenant_id têm RLS';
+END $$;
+ROLLBACK;
+
 -- limpeza
 BEGIN;
 SELECT set_config('app.role', 'SUPER_ADMIN', true);

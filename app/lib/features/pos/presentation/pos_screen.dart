@@ -14,6 +14,7 @@ import '../../partners/domain/partner.dart';
 import '../../partners/presentation/partner_picker_dialog.dart';
 import '../../products/domain/product.dart';
 import '../domain/pos_models.dart';
+import '../data/pos_repository.dart';
 import 'pos_controller.dart';
 import 'widgets/camera_scanner_sheet.dart';
 import 'widgets/payment_dialog.dart';
@@ -192,7 +193,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     }
     final result = await showDialog<PaymentResult>(
       context: context,
-      builder: (_) => PaymentDialog(total: s.total, customerName: s.customer?.displayName, initialMethod: method),
+      builder: (_) => PaymentDialog(
+        total: s.total,
+        customerName: s.customer?.displayName,
+        initialMethod: method,
+        lookupVoucher: (ref.read(sessionControllerProvider)?.hasModule('MODA') ?? false)
+            ? (code) => ref.read(posRepositoryProvider).voucher(code)
+            : null,
+      ),
     );
     if (result == null || !mounted) {
       _focusSearch();

@@ -12,7 +12,7 @@ class CartItem {
 
 double _round2(double v) => (v * 100).roundToDouble() / 100;
 
-enum PaymentMethod { dinheiro, pix, debito, credito, prazo }
+enum PaymentMethod { dinheiro, pix, debito, credito, prazo, vale }
 
 extension PaymentMethodX on PaymentMethod {
   String get api => switch (this) {
@@ -21,6 +21,7 @@ extension PaymentMethodX on PaymentMethod {
         PaymentMethod.debito => 'DEBITO',
         PaymentMethod.credito => 'CREDITO',
         PaymentMethod.prazo => 'PRAZO',
+        PaymentMethod.vale => 'VALE',
       };
 
   String get label => switch (this) {
@@ -29,6 +30,7 @@ extension PaymentMethodX on PaymentMethod {
         PaymentMethod.debito => 'Débito',
         PaymentMethod.credito => 'Crédito',
         PaymentMethod.prazo => 'A prazo',
+        PaymentMethod.vale => 'Vale-troca',
       };
 }
 
@@ -38,16 +40,24 @@ String paymentLabel(String api) => switch (api) {
       'DEBITO' => 'Cartão de débito',
       'CREDITO' => 'Cartão de crédito',
       'PRAZO' => 'A prazo',
+      'VALE' => 'Vale-troca',
+      'SINAL' => 'Sinal (já pago)',
       _ => 'Outros',
     };
 
 class Payment {
-  const Payment(this.method, this.amount);
+  const Payment(this.method, this.amount, {this.voucher});
   final PaymentMethod method;
   final double amount;
 
-  Map<String, dynamic> toJson() => {'method': method.api, 'amount': amount};
+  /// Código do vale-troca (quando method = vale).
+  final String? voucher;
+
+  Map<String, dynamic> toJson() => {'method': method.api, 'amount': amount, if (voucher != null) 'voucher': voucher};
 }
+
+/// Vale-troca conferido no servidor.
+typedef VoucherInfo = ({String code, double balance});
 
 /// Estado do PDV (imutável).
 class PosState {

@@ -153,6 +153,9 @@ class Session {
   bool get canUseWorkshop => hasModule('OFICINA') && !isSuperAdmin;
   bool get canCloseWorkOrder => canUseWorkshop && const {UserRole.admin, UserRole.gerente, UserRole.caixa}.contains(user.role);
   bool get canManageUsers => user.role == UserRole.admin;
+  bool get canUseFashion => hasModule('MODA') && const {UserRole.admin, UserRole.gerente, UserRole.caixa}.contains(user.role);
+  bool get canUsePrintshop =>
+      hasModule('ESTAMPARIA') && const {UserRole.admin, UserRole.gerente, UserRole.caixa, UserRole.operador}.contains(user.role);
 
   /// Dias até vencer a licença (null para tenant sem data).
   int? get licenseDaysLeft {

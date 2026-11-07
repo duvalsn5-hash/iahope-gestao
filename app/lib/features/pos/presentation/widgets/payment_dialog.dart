@@ -8,11 +8,14 @@ import '../../domain/pos_models.dart';
 typedef PaymentResult = ({List<Payment> payments, int dueDays});
 
 /// Recebimento com múltiplas formas de pagamento.
-/// Teclado: F1 Dinheiro · F2 PIX · F3 Débito · F4 Crédito · F6 A prazo ·
+/// Teclado: F1 Dinheiro · F2 PIX · F3 Débito · F4 Crédito · F6 A prazo · F7 Vale-troca ·
 /// Enter lança/confirma · F10 conclui · Esc volta
 class PaymentDialog extends StatefulWidget {
-  const PaymentDialog({super.key, required this.total, this.customerName, this.initialMethod});
+  const PaymentDialog({super.key, required this.total, this.customerName, this.initialMethod, this.lookupVoucher});
   final double total;
+
+  /// Confere um vale-troca pelo código (null = forma "Vale-troca" não aparece).
+  final Future<VoucherInfo?> Function(String code)? lookupVoucher;
 
   /// Forma já escolhida no painel do PDV (botões Dinheiro / PIX / Cartão / A prazo).
   final PaymentMethod? initialMethod;
@@ -39,7 +42,10 @@ class _PaymentDialogState extends State<PaymentDialog> {
   bool get _hasPrazo => _payments.any((p) => p.method == PaymentMethod.prazo);
 
   List<PaymentMethod> get _methods =>
-      [for (final m in PaymentMethod.values) if (m != PaymentMethod.prazo || _allowPrazo) m];
+      [
+        for (final m in PaymentMethod.values)
+          if ((m != PaymentMethod.prazo || _allowPrazo) && (m != PaymentMethod.vale || widget.lookupVoucher != null)) m,
+      ];
 
   static const _keys = {
     PaymentMethod.dinheiro: LogicalKeyboardKey.f1,
@@ -47,6 +53,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
     PaymentMethod.debito: LogicalKeyboardKey.f3,
     PaymentMethod.credito: LogicalKeyboardKey.f4,
     PaymentMethod.prazo: LogicalKeyboardKey.f6,
+    PaymentMethod.vale: LogicalKeyboardKey.f7,
   };
 
   @override
@@ -77,18 +84,64 @@ class _PaymentDialogState extends State<PaymentDialog> {
     _resetAmount();
   }
 
-  void _enter() {
+  Future<void> _enter() async {
     final v = parseMoney(_amount.text);
     if (v <= 0) {
       if (_done) _confirm();
       return;
     }
+    if (_method == PaymentMethod.vale) return _enterVoucher(v);
     // troco só faz sentido em dinheiro; demais formas limitadas ao restante
     final value = _method == PaymentMethod.dinheiro ? v : (v > _remaining ? _remaining : v);
     if (value <= 0) return;
     setState(() => _payments.add(Payment(_method, value)));
     _resetAmount();
   }
+
+  /// Vale-troca: pede o código, confere o saldo e lança até o saldo / o que falta.
+  Future<void> _enterVoucher(double wanted) async {
+    final ctrl = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Código do vale-troca'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.characters,
+          decoration: const InputDecoration(hintText: 'Ex.: VT000012', prefixIcon: Icon(Icons.confirmation_number_outlined)),
+          onSubmitted: (v) => Navigator.pop(c, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(c, ctrl.text.trim()), child: const Text('Conferir')),
+        ],
+      ),
+    );
+    if (code == null || code.isEmpty || !mounted) return;
+    if (_payments.any((p) => p.voucher?.toUpperCase() == code.toUpperCase())) {
+      _snack('Este vale já foi lançado');
+      return;
+    }
+    try {
+      final info = await widget.lookupVoucher!(code);
+      if (!mounted) return;
+      if (info == null || info.balance <= 0) {
+        _snack('Vale $code sem saldo');
+        return;
+      }
+      var value = wanted;
+      if (value > info.balance) value = info.balance;
+      if (value > _remaining) value = _remaining;
+      if (value <= 0) return;
+      setState(() => _payments.add(Payment(PaymentMethod.vale, value, voucher: info.code)));
+      _resetAmount();
+    } catch (e) {
+      if (mounted) _snack(e.toString());
+    }
+  }
+
+  void _snack(String m) => ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(m)));
 
   void _confirm() {
     if (!_done) return;
@@ -165,7 +218,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  title: Text(_payments[i].method.label),
+                  title: Text(_payments[i].voucher != null
+                      ? '${_payments[i].method.label} ${_payments[i].voucher}'
+                      : _payments[i].method.label),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text(money(_payments[i].amount)),
                     IconButton(

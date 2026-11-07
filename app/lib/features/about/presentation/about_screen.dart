@@ -21,6 +21,7 @@ class AboutScreen extends ConsumerWidget {
       ('F2', 'PDV (no PDV: foco na busca)'),
       ('F3', 'Produtividade (no PDV: identificar cliente)'),
       ('Alt+O / Alt+U', 'Oficina / Usuários'),
+      ('Alt+L / Alt+E', 'Loja (grade, trocas, condicional) / Estamparia'),
       ('Alt+P / Alt+C', 'Produtos / Clientes e fornecedores'),
       ('Alt+F / Alt+N', 'Financeiro / Compras (NF-e)'),
       ('F4', 'Empresa'),
@@ -32,7 +33,7 @@ class AboutScreen extends ConsumerWidget {
       ('Ctrl+Del', 'PDV: cancelar venda'),
       ('Ctrl+N / Ctrl+F', 'Novo cadastro / buscar (nas telas de cadastro)'),
       ('Ctrl+I', 'Compras: importar XML da NF-e'),
-      ('F1–F4, F6', 'Pagamento: Dinheiro, PIX, Débito, Crédito, A prazo'),
+      ('F1–F4, F6, F7', 'Pagamento: Dinheiro, PIX, Débito, Crédito, A prazo, Vale-troca'),
     ];
 
     return ListView(

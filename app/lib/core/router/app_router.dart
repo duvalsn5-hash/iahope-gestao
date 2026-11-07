@@ -7,10 +7,12 @@ import '../../features/auth/domain/session.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/session_controller.dart';
 import '../../features/company/presentation/company_settings_screen.dart';
+import '../../features/fashion/presentation/fashion_screen.dart';
 import '../../features/finance/presentation/finance_screen.dart';
 import '../../features/master_admin/presentation/master_admin_dashboard.dart';
 import '../../features/partners/presentation/partners_screen.dart';
 import '../../features/pos/presentation/pos_screen.dart';
+import '../../features/printshop/presentation/printshop_screen.dart';
 import '../../features/productivity/presentation/productivity_dashboard.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/purchases/presentation/purchases_screen.dart';
@@ -28,6 +30,8 @@ class Routes {
   static const finance = '/financeiro';
   static const purchases = '/compras';
   static const workshop = '/oficina';
+  static const fashion = '/loja';
+  static const printshop = '/estamparia';
   static const users = '/usuarios';
   static const company = '/empresa';
   static const about = '/sobre';
@@ -39,6 +43,7 @@ String homeFor(Session s) {
   if (s.user.role == UserRole.caixa && s.canSell) return Routes.pos;
   if (s.user.role == UserRole.mecanico && s.canUseWorkshop) return Routes.workshop;
   if (s.user.role == UserRole.operador && s.canSeeProductivity) return Routes.productivity;
+  if (s.user.role == UserRole.operador && s.canUsePrintshop) return Routes.printshop;
   if (s.canUseWorkshop && !s.canSell) return Routes.workshop;
   if (s.canSell) return Routes.pos;
   if (s.canSeeProductivity) return Routes.productivity;
@@ -55,6 +60,8 @@ bool canAccess(Session s, String path) => switch (path) {
       Routes.partners => s.canSeePartners,
       Routes.products => !s.isSuperAdmin && s.user.role != UserRole.mecanico,
       Routes.workshop => s.canUseWorkshop,
+      Routes.fashion => s.canUseFashion,
+      Routes.printshop => s.canUsePrintshop,
       Routes.users => s.canManageUsers,
       Routes.company => s.canManageCompany,
       _ => true,
@@ -92,6 +99,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           page(Routes.finance, const FinanceScreen()),
           page(Routes.purchases, const PurchasesScreen()),
           page(Routes.workshop, const WorkshopScreen()),
+          page(Routes.fashion, const FashionScreen()),
+          page(Routes.printshop, const PrintshopScreen()),
           page(Routes.users, const UsersScreen()),
           page(Routes.company, const CompanySettingsScreen()),
           page(Routes.about, const AboutScreen()),

@@ -15,8 +15,8 @@ export interface JwtPayload {
 }
 
 /** Módulos contratáveis (o Master liga/desliga por empresa). */
-export type Module = 'PDV' | 'PRODUTIVIDADE' | 'FINANCEIRO' | 'COMPRAS' | 'BALANCA' | 'OFICINA';
-export const ALL_MODULES: Module[] = ['PDV', 'PRODUTIVIDADE', 'FINANCEIRO', 'COMPRAS', 'BALANCA', 'OFICINA'];
+export type Module = 'PDV' | 'PRODUTIVIDADE' | 'FINANCEIRO' | 'COMPRAS' | 'BALANCA' | 'OFICINA' | 'MODA' | 'ESTAMPARIA';
+export const ALL_MODULES: Module[] = ['PDV', 'PRODUTIVIDADE', 'FINANCEIRO', 'COMPRAS', 'BALANCA', 'OFICINA', 'MODA', 'ESTAMPARIA'];
 
 declare global {
   namespace Express {

@@ -13,6 +13,9 @@ class Product {
     this.isActive = true,
     this.imageUrl,
     this.category,
+    this.gradeId,
+    this.size,
+    this.color,
   });
 
   final String id;
@@ -35,6 +38,9 @@ class Product {
   /// Categoria do produto (Bebidas, Camisetas, Freios…).
   final String? category;
 
+  /// Grade (loja de roupas): modelo, tamanho e cor desta combinação.
+  final String? gradeId, size, color;
+
   bool get lowStock => stockQty <= minStock;
 
   /// Margem sobre o preço de venda (%), quando há custo.
@@ -54,6 +60,9 @@ class Product {
         isActive: j['isActive'] as bool? ?? true,
         imageUrl: j['imageUrl'] as String?,
         category: j['category'] as String?,
+        gradeId: j['gradeId'] as String?,
+        size: j['size'] as String?,
+        color: j['color'] as String?,
       );
 }
 
