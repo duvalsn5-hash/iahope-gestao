@@ -104,7 +104,7 @@ jobs:
       - run: flutter build apk --release --dart-define=API_URL=${{ env.API_URL }}
       - run: mv build/app/outputs/flutter-apk/app-release.apk build/iahope-gestao.apk
       - uses: actions/upload-artifact@v4
-        with: { name: iahope-gestao-android, path: app/build/iahope-gestao.apk }
+        with: { name: iahope-gestao-android, path: app/build/iahope-gestao.apk, retention-days: 1 }
 
   windows:
     name: Windows
@@ -128,7 +128,7 @@ jobs:
       - run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/iahope-gestao-windows.zip
         shell: pwsh
       - uses: actions/upload-artifact@v4
-        with: { name: iahope-gestao-windows, path: app/build/iahope-gestao-windows.zip }
+        with: { name: iahope-gestao-windows, path: app/build/iahope-gestao-windows.zip, retention-days: 1 }
 
   release:
     name: Release (tag v*)
